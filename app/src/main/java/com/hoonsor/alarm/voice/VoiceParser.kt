@@ -65,6 +65,8 @@ object VoiceParser {
         raw: String,
         now: LocalDateTime = LocalDateTime.now(ZoneId.systemDefault()),
         groups: List<Pair<Long, String>> = emptyList(),
+        /** 從計時器頁開啟：只說時長（沒有幾點）時一律當成計時器，建立群組也預設是計時器群組 */
+        preferTimer: Boolean = false,
     ): VoiceIntent {
         val full = raw.replace(" ", "").replace("，", ",").replace("。", "")
         if (full.isBlank()) return VoiceIntent.Unknown("沒有聽到內容")
@@ -77,13 +79,13 @@ object VoiceParser {
         val ref = findGroupRef(text)
         if (ref != null) text = text.removeRange(ref.range)
         val groupName = ref?.name ?: create?.name
-        val forTimer = create?.forTimer == true || (create != null && parseTimer(text) != null)
+        val forTimer = create?.forTimer == true || (create != null && (preferTimer || parseTimer(text, preferTimer) != null))
         val createIntent = create?.let { VoiceIntent.CreateGroup(it.name, forTimer) }
 
         if (create == null && Regex("(?:新增|建立|創建|新建)(?:一個|個)?(?:新的)?(?:鬧鐘|計時器?)?群組$").containsMatchIn(full)) {
             return VoiceIntent.Unknown("請說出群組名稱，例如「新增鬧鐘群組叫上班」或「建立運動群組」")
         }
-        val main = parseMain(text.trim(','), now, groupName)
+        val main = parseMain(text.trim(','), now, groupName, preferTimer)
         return when {
             createIntent == null -> main
             main is VoiceIntent.Unknown -> createIntent
@@ -91,11 +93,11 @@ object VoiceParser {
         }
     }
 
-    private fun parseMain(text: String, now: LocalDateTime, groupName: String?): VoiceIntent {
+    private fun parseMain(text: String, now: LocalDateTime, groupName: String?, preferTimer: Boolean = false): VoiceIntent {
         if (text.isBlank()) return VoiceIntent.Unknown("沒有聽到內容")
         val memo = extractMemo(text)
 
-        parseTimer(text)?.let { return VoiceIntent.Timer(it, memo, groupName) }
+        parseTimer(text, preferTimer)?.let { return VoiceIntent.Timer(it, memo.ifBlank { timerMemo(text) }, groupName) }
 
         val time = parseClock(text) ?: return VoiceIntent.Unknown("聽不出時間，試試「早上七點十五」或「二十五分鐘後」")
         val (hour, minute) = time
@@ -182,8 +184,20 @@ object VoiceParser {
 
     // ---------- 計時器 ----------
 
-    private fun parseTimer(t: String): Long? {
-        val isTimer = t.contains("後") || t.contains("倒數") || t.contains("計時")
+    /** 「十二分鐘煮麵」這種沒有「提醒我」的說法：去掉時長與贅字，剩下的當提醒 */
+    private fun timerMemo(t: String): String {
+        val rest = t
+            .replace(Regex("${NUM}個?半?(小時|鐘頭)半?"), "")
+            .replace(Regex("${NUM}(分鐘|分)"), "")
+            .replace(Regex("${NUM}秒(鐘)?"), "")
+            .replace(Regex("半小時"), "")
+            .replace(Regex("(幫我|請|設定?|開始|一個|新增|建立|倒數|計時器?|之後|以後|後|的|吧|一下|timer)"), "")
+            .trim(',', '、', ' ')
+        return if (rest.length in 1..20) rest else ""
+    }
+
+    private fun parseTimer(t: String, preferTimer: Boolean = false): Long? {
+        val isTimer = preferTimer || t.contains("後") || t.contains("倒數") || t.contains("計時")
         if (!isTimer || Regex("$NUM[點:：]").containsMatchIn(t) && !t.contains("小時")) return null
         var ms = 0L
         if (t.contains("半小時") && !Regex("${NUM}個?半小時").containsMatchIn(t)) ms += 30 * 60_000L

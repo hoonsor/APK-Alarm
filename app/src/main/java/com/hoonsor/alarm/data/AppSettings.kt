@@ -147,6 +147,11 @@ class AppSettings(context: Context) {
         get() = (prefs.getString("swLaps", "") ?: "").split(',').mapNotNull { it.toLongOrNull() }
         set(v) = prefs.edit().putString("swLaps", v.joinToString(",")).apply()
 
+    /** 計時器排序：remaining_asc / remaining_desc / created_desc / created_asc / name_asc */
+    var timerSort: String
+        get() = prefs.getString("timerSort", "created_desc") ?: "created_desc"
+        set(v) = prefs.edit().putString("timerSort", v).apply()
+
     /** 計時器上次自訂的時長，下次開啟沿用 */
     var lastTimerMs: Long
         get() = prefs.getLong("lastTimerMs", 25 * 60_000L)

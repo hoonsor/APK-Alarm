@@ -55,3 +55,31 @@ fun AlarmTheme(content: @Composable () -> Unit) {
         content = content,
     )
 }
+
+/**
+ * 群組底色調色盤（深色介面上要看得出差別，又不能搶過琥珀色的選取框）。
+ * 索引存在資料庫，順序不要改，只能往後加。
+ */
+object GroupColors {
+    val palette = listOf(
+        Color(0xFF4C7DFF), // 藍
+        Color(0xFF2BB3A3), // 青
+        Color(0xFF5DBB63), // 綠
+        Color(0xFF9B6CF0), // 紫
+        Color(0xFFE0609B), // 粉
+        Color(0xFFE25B5B), // 紅
+        Color(0xFFE58A3C), // 橘
+        Color(0xFF9DB83A), // 黃綠
+    )
+    val names = listOf("藍", "青", "綠", "紫", "粉", "紅", "橘", "黃綠")
+
+    fun of(index: Int): Color = palette[index.mod(palette.size)]
+
+    /** 群組標題列底色 */
+    fun header(index: Int): Color = of(index).copy(alpha = 0.22f)
+
+    /** 群組內卡片的淡淡底色（疊在 C.surface 上） */
+    fun tile(index: Int): Color = of(index).copy(alpha = 0.09f)
+
+    fun border(index: Int): Color = of(index).copy(alpha = 0.55f)
+}

@@ -41,10 +41,11 @@ object AiParser {
         groups: List<AlarmGroupEntity>,
         timerGroups: List<TimerGroupEntity> = emptyList(),
         now: LocalDateTime = LocalDateTime.now(ZoneId.systemDefault()),
+        preferTimer: Boolean = false,
     ): VoiceIntent = withContext(Dispatchers.IO) {
         val s = Graph.settings
         val key = KeyVault.decrypt(s.aiKeyCipher) ?: throw AiException("尚未設定 API key")
-        val content = chat(s.aiBaseUrl, s.aiModel, key, systemPrompt(alarms, groups, now, timerGroups), transcript)
+        val content = chat(s.aiBaseUrl, s.aiModel, key, systemPrompt(alarms, groups, now, timerGroups, preferTimer), transcript)
         parseResponse(content, alarms.map { it.id }.toSet(), groups.map { it.id }.toSet())
     }
 
@@ -114,6 +115,7 @@ object AiParser {
         groups: List<AlarmGroupEntity>,
         now: LocalDateTime,
         timerGroups: List<TimerGroupEntity> = emptyList(),
+        preferTimer: Boolean = false,
     ): String {
         val weekday = now.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.TRADITIONAL_CHINESE)
         val groupName = groups.associate { it.id to it.name }
@@ -163,6 +165,7 @@ object AiParser {
    - group_id 必須來自「現有鬧鐘群組」。「關閉／暫停上班群組」→ enabled:false；「打開／恢復」→ enabled:true。
 
 規則：
+${if (preferTimer) "- 使用者是在「計時器」頁面說話：只說時長、沒說幾點（例如「十分鐘」「一個半小時煮飯」）時，建立計時器 create_timer；「新增群組」預設是計時器群組（for:\"timer\"）。說了明確時刻（例如「七點」）才建立鬧鐘。\n" else ""}- 只說時長、沒說幾點（例如「十分鐘後」「倒數二十分鐘」「二十五分鐘計時」）時建立計時器 create_timer。
 - memo 只放提醒內容，去掉「叫我」「提醒我」「記得」等字，也不要包含群組名稱；沒有內容就給空字串。
 - 一句話要求多個鬧鐘時，actions 放多個動作。
 - 時間有兩種以上合理解讀時（例如凌晨說「明天早上」可能指今天天亮後），不要猜，改用 question：

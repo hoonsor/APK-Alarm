@@ -72,6 +72,9 @@ import com.hoonsor.alarm.ui.common.GlyphIcon
 import com.hoonsor.alarm.ui.common.MiniSwitch
 import com.hoonsor.alarm.ui.common.NameDialog
 import com.hoonsor.alarm.ui.theme.C
+import com.hoonsor.alarm.ui.theme.GroupColors
+import com.hoonsor.alarm.ui.common.GroupColorDialog
+import com.hoonsor.alarm.data.color
 
 /** 卡片固定高度：不論內容多寡、是否為副本，每張卡一樣大 */
 private val TILE_HEIGHT = 112.dp
@@ -93,6 +96,7 @@ fun AlarmsScreen(
 
     var newGroupDialog by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<AlarmGroupEntity?>(null) }
+    var coloring by remember { mutableStateOf<AlarmGroupEntity?>(null) }
     var deleting by remember { mutableStateOf<AlarmGroupEntity?>(null) }
     var newGroupForSelection by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -166,6 +170,7 @@ fun AlarmsScreen(
                                 onToggleExpanded = { vm.toggleGroupExpanded(g) },
                                 onToggleEnabled = { vm.toggleGroupEnabled(g) },
                                 onRename = { renaming = g },
+                                onColor = { coloring = g },
                                 onDelete = { deleting = g },
                             )
                         }
@@ -179,7 +184,7 @@ fun AlarmsScreen(
                                     )
                                 }
                             }
-                            tiles(list, vm, groupEnabled = g.enabled, drag = drag, onDrop = { onDrop(it) })
+                            tiles(list, vm, groupEnabled = g.enabled, drag = drag, onDrop = { onDrop(it) }, groupColor = g.color)
                         }
                     }
                     if (groups.isNotEmpty() && ungrouped.isNotEmpty()) {
@@ -244,6 +249,9 @@ fun AlarmsScreen(
     if (newGroupDialog) {
         NameDialog("新增群組", "", confirmLabel = "建立", onConfirm = { vm.addGroup(it); newGroupDialog = false }, onDismiss = { newGroupDialog = false })
     }
+    coloring?.let { g ->
+        GroupColorDialog("「${g.name}」的顏色", g.color, onPick = { vm.setGroupColor(g.id, it); coloring = null }, onDismiss = { coloring = null })
+    }
     renaming?.let { g ->
         NameDialog("重新命名群組", g.name, onConfirm = { vm.renameGroup(g.id, it); renaming = null }, onDismiss = { renaming = null })
     }
@@ -270,11 +278,13 @@ private fun LazyGridScope.tiles(
     groupEnabled: Boolean,
     drag: GroupDragController,
     onDrop: (DropTarget?) -> Unit,
+    groupColor: Int? = null,
 ) {
     items(list, key = { it.id }) { a ->
         AlarmTile(
             alarm = a,
             groupEnabled = groupEnabled,
+            groupColor = groupColor,
             selecting = vm.selecting,
             selected = a.id in vm.selection,
             open = vm.editingId == a.id,
@@ -305,10 +315,12 @@ private fun GroupHeader(
     onToggleExpanded: () -> Unit,
     onToggleEnabled: () -> Unit,
     onRename: () -> Unit,
+    onColor: () -> Unit,
     onDelete: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
     val active = alarms.count { it.isActive(groupMap) }
+    val tint = group.color
     val nextAt = alarms.mapNotNull { NextTrigger.forAlarm(it, now, groupMap) }.minOrNull()
     val summary = buildString {
         append("${alarms.size} 個")
@@ -320,7 +332,8 @@ private fun GroupHeader(
     Row(
         Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(16.dp))
             .background(if (group.enabled) C.surface else C.bgDeep)
-            .border(1.dp, C.border, RoundedCornerShape(16.dp))
+            .background(if (group.enabled) GroupColors.header(tint) else GroupColors.tile(tint))
+            .border(1.dp, if (group.enabled) GroupColors.border(tint) else C.border, RoundedCornerShape(16.dp))
             .clickable(onClickLabel = if (group.expanded) "收合群組" else "展開群組", onClick = onToggleExpanded)
             .padding(start = 12.dp, end = 2.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -338,6 +351,7 @@ private fun GroupHeader(
             IconButton(onClick = { menu = true }) { GlyphIcon(Glyph.More, "群組選項", tint = C.muted, size = 20.dp) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = C.surfaceHi) {
                 DropdownMenuItem(text = { Text("重新命名", color = C.text) }, onClick = { menu = false; onRename() })
+                DropdownMenuItem(text = { Text("變更顏色", color = C.text) }, onClick = { menu = false; onColor() })
                 DropdownMenuItem(text = { Text("刪除群組", color = C.danger) }, onClick = { menu = false; onDelete() })
             }
         }
@@ -382,6 +396,7 @@ private fun SelectionHeader(count: Int, allSelected: Boolean, onExit: () -> Unit
 private fun AlarmTile(
     alarm: AlarmEntity,
     groupEnabled: Boolean,
+    groupColor: Int?,
     selecting: Boolean,
     selected: Boolean,
     open: Boolean,
@@ -424,7 +439,9 @@ private fun AlarmTile(
         Modifier.height(TILE_HEIGHT)
             .onGloballyPositioned { drag.tileBounds[alarm.id] = it.boundsInRoot() }
             .alpha(if (dragging) 0.3f else 1f)
-            .clip(shape).background(bg).border(if (selected) 2.dp else 1.dp, borderColor, shape)
+            .clip(shape).background(bg)
+            .then(if (groupColor != null && !selected) Modifier.background(GroupColors.tile(groupColor)) else Modifier)
+            .border(if (selected) 2.dp else 1.dp, if (groupColor != null && !selected && !open) GroupColors.of(groupColor).copy(alpha = 0.28f) else borderColor, shape)
             .semantics { contentDescription = "${Fmt.hm(alarm.hour, alarm.minute)} 鬧鐘，${Days.summary(alarm.daysMask)}" }
             .then(gesture),
     ) {

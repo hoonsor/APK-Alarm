@@ -87,4 +87,12 @@ class VoiceParserTest {
         assertEquals(1L, r.groupId)
         assertEquals(false, r.enabled)
     }
+
+    @Test fun timerPageDurationOnly() {
+        val r = VoiceParser.parse("十二分鐘煮麵放到煮飯群組", friEvening, preferTimer = true) as VoiceIntent.Timer
+        assertEquals(12 * 60_000L, r.durationMs)
+        assertEquals("煮麵", r.memo)
+        assertEquals("煮飯", r.groupName)
+        assertTrue(VoiceParser.parse("七點叫我起床", friEvening, preferTimer = true) is VoiceIntent.Alarm)
+    }
 }

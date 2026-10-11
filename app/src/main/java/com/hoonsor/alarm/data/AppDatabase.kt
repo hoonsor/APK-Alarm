@@ -138,7 +138,7 @@ interface TimerGroupDao {
 
 @Database(
     entities = [AlarmEntity::class, TimerEntity::class, AlarmGroupEntity::class, TimerGroupEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -202,9 +202,17 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v0.6 → v0.7：群組底色 */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `alarm_groups` ADD COLUMN `colorIndex` INTEGER NOT NULL DEFAULT -1")
+                db.execSQL("ALTER TABLE `timer_groups` ADD COLUMN `colorIndex` INTEGER NOT NULL DEFAULT -1")
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "alarm.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .build()
     }
 }

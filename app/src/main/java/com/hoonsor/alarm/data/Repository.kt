@@ -95,7 +95,8 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
 
     suspend fun addGroup(name: String): Long {
         val order = groups.maxSortOrder() + 1
-        return groups.insert(AlarmGroupEntity(name = name.trim().ifBlank { "新群組" }, sortOrder = order))
+        val color = nextGroupColor(groups.getAll().map { it.color })
+        return groups.insert(AlarmGroupEntity(name = name.trim().ifBlank { "新群組" }, sortOrder = order, colorIndex = color))
     }
 
     /** 依名稱找鬧鐘群組（不分大小寫、忽略空白），找不到就建立；語音建立時使用 */
@@ -103,6 +104,11 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
         val key = name.trim()
         groups.getAll().firstOrNull { it.name.trim().equals(key, ignoreCase = true) }?.let { return it.id }
         return addGroup(key)
+    }
+
+    suspend fun setGroupColor(id: Long, colorIndex: Int) {
+        val g = groups.get(id) ?: return
+        groups.update(g.copy(colorIndex = colorIndex.coerceIn(0, GROUP_COLOR_COUNT - 1)))
     }
 
     suspend fun renameGroup(id: Long, name: String) {
@@ -194,7 +200,8 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
 
     suspend fun addTimerGroup(name: String): Long {
         val order = timerGroups.maxSortOrder() + 1
-        return timerGroups.insert(TimerGroupEntity(name = name.trim().ifBlank { "新群組" }, sortOrder = order))
+        val color = nextGroupColor(timerGroups.getAll().map { it.color })
+        return timerGroups.insert(TimerGroupEntity(name = name.trim().ifBlank { "新群組" }, sortOrder = order, colorIndex = color))
     }
 
     suspend fun findOrCreateTimerGroup(name: String): Long {
@@ -202,6 +209,25 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
         timerGroups.getAll().firstOrNull { it.name.trim().equals(key, ignoreCase = true) }?.let { return it.id }
         return addTimerGroup(key)
     }
+
+    suspend fun setTimerGroupColor(id: Long, colorIndex: Int) {
+        val g = timerGroups.get(id) ?: return
+        timerGroups.update(g.copy(colorIndex = colorIndex.coerceIn(0, GROUP_COLOR_COUNT - 1)))
+    }
+
+    /** 多選批次操作 */
+    suspend fun moveTimersToGroup(ids: Collection<Long>, groupId: Long?) {
+        ids.forEach { moveTimerToGroup(it, groupId) }
+    }
+
+    suspend fun deleteTimers(ids: Collection<Long>) {
+        ids.forEach { id -> timers.get(id)?.let { timers.delete(it) } }
+        scheduler.rescheduleAll("刪除計時")
+    }
+
+    suspend fun pauseTimers(ids: Collection<Long>) = ids.forEach { pauseTimer(it) }
+
+    suspend fun resumeTimers(ids: Collection<Long>) = ids.forEach { resumeTimer(it) }
 
     suspend fun renameTimerGroup(id: Long, name: String) {
         val g = timerGroups.get(id) ?: return

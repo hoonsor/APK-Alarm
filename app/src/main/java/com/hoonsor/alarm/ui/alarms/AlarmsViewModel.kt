@@ -88,6 +88,7 @@ class AlarmsViewModel : ViewModel() {
     fun toggleGroupExpanded(g: AlarmGroupEntity) = launch { repo.setGroupExpanded(g.id, !g.expanded) }
     fun renameGroup(id: Long, name: String) = launch { repo.renameGroup(id, name) }
     fun deleteGroup(id: Long) = launch { repo.deleteGroup(id) }
+    fun setGroupColor(id: Long, color: Int) = launch { repo.setGroupColor(id, color) }
 
     /** 新增群組，並可同時把指定的鬧鐘放進去 */
     fun addGroup(name: String, assign: List<Long> = emptyList()) = launch {

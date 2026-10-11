@@ -1,14 +1,18 @@
 package com.hoonsor.alarm.ui.common
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -31,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hoonsor.alarm.ui.theme.C
+import com.hoonsor.alarm.ui.theme.GroupColors
 
 @Composable
 fun textFieldColors() = OutlinedTextFieldDefaults.colors(
@@ -95,6 +100,36 @@ fun ChoiceDialog(title: String, items: List<ChoiceItem>, onDismiss: () -> Unit) 
                             item.detail?.let { Text(it, color = C.muted, fontSize = 12.sp) }
                         }
                         if (item.selected) GlyphIcon(Glyph.Check, "目前選擇", tint = C.accent, size = 18.dp)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("關閉", color = C.muted) } },
+    )
+}
+
+/** 群組顏色選擇 */
+@Composable
+fun GroupColorDialog(title: String, current: Int, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = C.surfaceHi,
+        title = { Text(title, color = C.text) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                GroupColors.palette.indices.chunked(4).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        row.forEach { i ->
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Box(
+                                    Modifier.size(48.dp).clip(CircleShape).background(GroupColors.of(i))
+                                        .border(if (i == current) 3.dp else 0.dp, if (i == current) C.text else Color.Transparent, CircleShape)
+                                        .clickable(onClickLabel = GroupColors.names[i]) { onPick(i) },
+                                    contentAlignment = Alignment.Center,
+                                ) { if (i == current) GlyphIcon(Glyph.Check, "目前顏色", tint = Color.White, size = 20.dp) }
+                                Text(GroupColors.names[i], color = C.muted, fontSize = 11.sp)
+                            }
+                        }
                     }
                 }
             }

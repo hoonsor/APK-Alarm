@@ -25,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -41,6 +42,8 @@ import com.hoonsor.alarm.data.AlarmEntity
 import com.hoonsor.alarm.data.AlarmGroupEntity
 import com.hoonsor.alarm.domain.Fmt
 import com.hoonsor.alarm.ui.theme.C
+import com.hoonsor.alarm.ui.theme.GroupColors
+import com.hoonsor.alarm.data.color
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -138,13 +141,15 @@ fun DropPanel(groups: List<AlarmGroupEntity>, drag: GroupDragController, modifie
                     DropTarget.NewGroup -> "＋ 新群組"
                 }
                 val hot = drag.hovered == t
+                val gc = (t as? DropTarget.Group)?.let { tg -> groups.firstOrNull { it.id == tg.id }?.color }
                 Box(
                     Modifier
                         .onGloballyPositioned { drag.targetBounds[t] = it.boundsInRoot() }
                         .graphicsLayer { scaleX = if (hot) 1.08f else 1f; scaleY = if (hot) 1.08f else 1f }
                         .clip(RoundedCornerShape(18.dp))
                         .background(if (hot) C.accent else C.field)
-                        .border(1.dp, if (hot) C.accent else C.chipBorder, RoundedCornerShape(18.dp))
+                        .background(if (!hot && gc != null) GroupColors.header(gc) else Color.Transparent)
+                        .border(1.dp, if (hot) C.accent else if (gc != null) GroupColors.border(gc) else C.chipBorder, RoundedCornerShape(18.dp))
                         .padding(horizontal = 18.dp, vertical = 14.dp),
                     contentAlignment = Alignment.Center,
                 ) {

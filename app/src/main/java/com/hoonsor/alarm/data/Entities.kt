@@ -54,6 +54,8 @@ data class AlarmGroupEntity(
     val expanded: Boolean = true,
     val sortOrder: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
+    /** 群組底色（調色盤索引）；-1 代表舊資料尚未指定，顯示時依 id 自動挑一個 */
+    @ColumnInfo(defaultValue = "-1") val colorIndex: Int = -1,
 )
 
 /**
@@ -90,7 +92,22 @@ data class TimerGroupEntity(
     val expanded: Boolean = true,
     val sortOrder: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "-1") val colorIndex: Int = -1,
 )
+
+/** 群組調色盤的顏色數量（實際顏色定義在 ui.theme.GroupColors） */
+const val GROUP_COLOR_COUNT = 8
+
+/** 實際使用的顏色索引：未指定時依 id 決定，確保舊群組也有顏色且彼此不同 */
+fun effectiveColor(colorIndex: Int, id: Long): Int =
+    if (colorIndex in 0 until GROUP_COLOR_COUNT) colorIndex else (id % GROUP_COLOR_COUNT).toInt()
+
+val AlarmGroupEntity.color: Int get() = effectiveColor(colorIndex, id)
+val TimerGroupEntity.color: Int get() = effectiveColor(colorIndex, id)
+
+/** 新群組自動配色：挑目前用得最少的顏色，同樣少時取前面的 */
+fun nextGroupColor(used: List<Int>): Int =
+    (0 until GROUP_COLOR_COUNT).minBy { c -> used.count { it == c } * GROUP_COLOR_COUNT + c }
 
 enum class TimerState { RUNNING, PAUSED, RINGING, DONE }
 

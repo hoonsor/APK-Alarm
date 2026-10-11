@@ -70,6 +70,8 @@ import com.hoonsor.alarm.ui.stopwatch.StopwatchScreen
 import com.hoonsor.alarm.ui.theme.AlarmTheme
 import com.hoonsor.alarm.ui.theme.C
 import com.hoonsor.alarm.ui.timer.TimerScreen
+import com.hoonsor.alarm.ui.timer.TimerSelection
+import com.hoonsor.alarm.ui.timer.TimerSelectionBar
 import com.hoonsor.alarm.voice.VoiceScreen
 import kotlinx.coroutines.launch
 
@@ -137,6 +139,9 @@ private fun MainScreen() {
     val snackbar = remember { SnackbarHostState() }
     var tab by rememberSaveable { mutableStateOf(Tab.ALARMS) }
     var overlay by rememberSaveable { mutableStateOf(Overlay.NONE) }
+    /** 從計時器頁開啟語音：只說時長時優先建立計時器 */
+    var voiceForTimer by rememberSaveable { mutableStateOf(false) }
+    val timerSelection = remember { TimerSelection() }
     var healthIssues by remember { mutableIntStateOf(0) }
     var healthRefresh by remember { mutableIntStateOf(0) }
 
@@ -153,8 +158,12 @@ private fun MainScreen() {
         ) notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
-    BackHandler(enabled = overlay != Overlay.NONE || vm.selecting) {
-        if (overlay != Overlay.NONE) overlay = Overlay.NONE else vm.exitSelect()
+    BackHandler(enabled = overlay != Overlay.NONE || vm.selecting || timerSelection.active) {
+        when {
+            overlay != Overlay.NONE -> overlay = Overlay.NONE
+            timerSelection.active -> timerSelection.exit()
+            else -> vm.exitSelect()
+        }
     }
 
     fun showUndo(removed: List<AlarmEntity>) {
@@ -170,6 +179,7 @@ private fun MainScreen() {
             Overlay.HEALTH -> HealthScreen(onBack = { overlay = Overlay.NONE })
             Overlay.SETTINGS -> SettingsScreen(onBack = { overlay = Overlay.NONE })
             Overlay.VOICE -> VoiceScreen(
+                preferTimer = voiceForTimer,
                 onClose = { overlay = Overlay.NONE },
                 onCreated = { msg ->
                     overlay = Overlay.NONE
@@ -185,17 +195,19 @@ private fun MainScreen() {
                             healthIssues = healthIssues,
                             onOpenHealth = { overlay = Overlay.HEALTH },
                             onOpenSettings = { overlay = Overlay.SETTINGS },
-                            onVoice = { overlay = Overlay.VOICE },
+                            onVoice = { voiceForTimer = false; overlay = Overlay.VOICE },
                         )
-                        Tab.TIMER -> TimerScreen()
+                        Tab.TIMER -> TimerScreen(timerSelection, onVoice = { voiceForTimer = true; overlay = Overlay.VOICE })
                         Tab.STOPWATCH -> StopwatchScreen()
                     }
                 }
                 HorizontalDivider(color = C.border)
                 if (tab == Tab.ALARMS && vm.selecting) {
                     AlarmSelectionBar(vm, onDelete = { scope.launch { showUndo(vm.bulkDelete()) } })
+                } else if (tab == Tab.TIMER && timerSelection.active) {
+                    TimerSelectionBar(timerSelection)
                 } else {
-                    BottomNav(tab) { tab = it; vm.exitSelect() }
+                    BottomNav(tab) { tab = it; vm.exitSelect(); timerSelection.exit() }
                 }
             }
         }

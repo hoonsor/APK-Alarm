@@ -71,7 +71,7 @@ private enum class Phase { LISTENING, THINKING, RESULT, ERROR }
  * → 確認卡片 → 寫入。辨識不準時可以直接修改文字重新解析。
  */
 @Composable
-fun VoiceScreen(onClose: () -> Unit, onCreated: (String) -> Unit) {
+fun VoiceScreen(onClose: () -> Unit, onCreated: (String) -> Unit, preferTimer: Boolean = false) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var phase by remember { mutableStateOf(Phase.LISTENING) }
@@ -95,7 +95,7 @@ fun VoiceScreen(onClose: () -> Unit, onCreated: (String) -> Unit) {
             phase = Phase.ERROR; error = "沒有內容可以解析"; return
         }
         if (!AiParser.isConfigured()) {
-            result = VoiceParser.parse(text, groups = groups.map { it.id to it.name })
+            result = VoiceParser.parse(text, groups = groups.map { it.id to it.name }, preferTimer = preferTimer)
             source = "離線解析（未設定 AI，可在設定頁填入 MiniMax API key）"
             phase = Phase.RESULT
             return
@@ -107,11 +107,11 @@ fun VoiceScreen(onClose: () -> Unit, onCreated: (String) -> Unit) {
             val latestGroups = Graph.db.groupDao().getAll().also { groups = it }
             val latestTimerGroups = Graph.db.timerGroupDao().getAll()
             try {
-                result = AiParser.parse(text, latestAlarms, latestGroups, latestTimerGroups)
+                result = AiParser.parse(text, latestAlarms, latestGroups, latestTimerGroups, preferTimer = preferTimer)
                 val sec = (SystemClock.elapsedRealtime() - t0) / 100 / 10.0
                 source = "${Graph.settings.aiModel} 解析完成 · $sec 秒"
             } catch (e: Exception) {
-                result = VoiceParser.parse(text, groups = latestGroups.map { it.id to it.name })
+                result = VoiceParser.parse(text, groups = latestGroups.map { it.id to it.name }, preferTimer = preferTimer)
                 source = "AI 無法使用，已改用離線解析（${e.message ?: e.javaClass.simpleName}）"
             }
             phase = Phase.RESULT
@@ -246,7 +246,7 @@ fun VoiceScreen(onClose: () -> Unit, onCreated: (String) -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(start = 4.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { recognizer?.cancel(); onClose() }) { GlyphIcon(Glyph.Close, "取消並返回", tint = C.text) }
-            Text("語音建立", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = C.text)
+            Text(if (preferTimer) "語音建立計時器" else "語音建立", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = C.text)
         }
         Column(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
@@ -325,7 +325,10 @@ fun VoiceScreen(onClose: () -> Unit, onCreated: (String) -> Unit) {
                         null -> Unit
                     }
                 }
-                Phase.LISTENING -> Text(
+                Phase.LISTENING -> if (preferTimer) Text(
+                    "可以這樣說：\n「十分鐘」「一個半小時」\n「二十五分鐘提醒我起來走動」\n「十二分鐘煮麵，放到煮飯群組」\n「新增計時器群組叫運動」",
+                    color = C.muted, fontSize = 14.sp, lineHeight = 24.sp,
+                ) else Text(
                     "可以這樣說：\n「每週一三五早上七點十五叫我晨跑」\n「平日六點半」\n「二十五分鐘後提醒我起來走動」\n「把晨跑那個改成六點半」\n「新增鬧鐘群組叫上班，平日七點叫我出門」\n「關閉上班群組」",
                     color = C.muted, fontSize = 14.sp, lineHeight = 24.sp,
                 )
