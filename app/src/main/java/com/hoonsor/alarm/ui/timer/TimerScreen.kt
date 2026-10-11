@@ -82,7 +82,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val PRESETS_MIN = listOf(1, 3, 5, 10, 15, 25, 45, 60)
-private val TIMER_TILE_HEIGHT = 156.dp
+private val TIMER_TILE_HEIGHT = 140.dp
 
 /** 計時器多選狀態；由 MainActivity 持有，選取時底部導覽列換成批次操作列 */
 class TimerSelection {
@@ -221,6 +221,7 @@ fun TimerScreen(selection: TimerSelection, onVoice: () -> Unit) {
                     TimerCard(
                         t = t,
                         remaining = remainingOf(t),
+                        nowWall = nowWall,
                         groupOff = groupOff,
                         groupColor = groupColor,
                         selecting = selection.active,
@@ -605,6 +606,7 @@ private fun TimerGroupHeader(
 private fun TimerCard(
     t: TimerEntity,
     remaining: Long,
+    nowWall: Long,
     groupOff: Boolean,
     groupColor: Int?,
     selecting: Boolean,
@@ -644,24 +646,40 @@ private fun TimerCard(
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
-            t.label.ifBlank { "計時器" }, color = C.textSoft, fontSize = 13.sp,
+            t.label.ifBlank { "計時器" }, color = C.textSoft, fontSize = 12.sp,
             maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
         Text(
-            Fmt.duration(remaining), fontSize = 28.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+            Fmt.duration(remaining), fontSize = 23.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
             color = if (running) C.text else C.muted,
         )
-        Text("$status · 共 ${Fmt.duration(t.durationMs)}", color = C.muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Box(Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)).background(Color(0xFF262C3A))) {
+        // 幾點響：執行中＝實際響鈴時刻；暫停中＝現在按繼續的話幾點響
+        val ringText = when {
+            running -> "${ringAt(nowWall + remaining, nowWall)} 響"
+            t.state == TimerState.PAUSED && remaining > 0 -> "繼續則 ${ringAt(nowWall + remaining, nowWall)} 響"
+            else -> null
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            GlyphIcon(Glyph.Bell, null, tint = if (running) C.accentSoft else C.dim, size = 12.dp)
+            Text(
+                " " + (ringText ?: status), color = if (running) C.accentSoft else C.muted, fontSize = 12.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            (if (ringText != null) "$status · " else "") + "共 ${Fmt.duration(t.durationMs)}",
+            color = C.dim, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
+        Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color(0xFF262C3A))) {
             Box(
-                Modifier.fillMaxWidth(progress).height(5.dp).clip(RoundedCornerShape(3.dp))
+                Modifier.fillMaxWidth(progress).height(4.dp).clip(RoundedCornerShape(3.dp))
                     .background(if (running) C.accent else C.nav),
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (selecting) {
                 Box(
-                    Modifier.size(28.dp).clip(CircleShape)
+                    Modifier.size(26.dp).clip(CircleShape)
                         .background(if (selected) C.accent else Color.Transparent)
                         .border(1.5.dp, if (selected) C.accent else C.chipBorder, CircleShape),
                     contentAlignment = Alignment.Center,
@@ -682,10 +700,23 @@ private fun TimerCard(
 @Composable
 private fun RoundBtn(glyph: Glyph, label: String, filled: Boolean, onClick: () -> Unit, tint: Color = C.text) {
     Box(
-        Modifier.size(40.dp).clip(CircleShape)
+        Modifier.size(32.dp).clip(CircleShape)
             .background(if (filled) C.accent else Color.Transparent)
             .border(1.dp, if (filled) C.accent else C.borderHi, CircleShape)
             .clickable(onClickLabel = label, onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { GlyphIcon(glyph, label, tint = if (filled) C.onAccent else tint, size = 18.dp) }
+    ) { GlyphIcon(glyph, label, tint = if (filled) C.onAccent else tint, size = 15.dp) }
+}
+
+/** 響鈴時刻：今天顯示 14:35:20；跨日加「明天」或日期 */
+private fun ringAt(at: Long, now: Long): String {
+    val zone = java.time.ZoneId.systemDefault()
+    val t = java.time.Instant.ofEpochMilli(at).atZone(zone)
+    val days = java.time.temporal.ChronoUnit.DAYS.between(java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate(), t.toLocalDate())
+    val time = "%02d:%02d:%02d".format(t.hour, t.minute, t.second)
+    return when (days) {
+        0L -> time
+        1L -> "明天 $time"
+        else -> "${t.monthValue}/${t.dayOfMonth} $time"
+    }
 }
