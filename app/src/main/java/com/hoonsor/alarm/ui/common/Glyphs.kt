@@ -25,6 +25,7 @@ enum class Glyph(private val d: String, private val filled: Boolean = false) {
     Mic("M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3zM19 10v1a7 7 0 0 1-14 0v-1M12 18v4"),
     Settings("M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"),
     Image("M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM9 7a2 2 0 1 0 0 4a2 2 0 1 0 0-4zM21 15l-5-5L5 21"),
+    Share("M18 8a3 3 0 1 0 0-6a3 3 0 1 0 0 6zM6 15a3 3 0 1 0 0-6a3 3 0 1 0 0 6zM18 22a3 3 0 1 0 0-6a3 3 0 1 0 0 6zM8.6 13.5l6.8 4M15.4 6.5l-6.8 4"),
     Copy("M11 9h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"),
     Power("M7 7h10a5 5 0 0 1 0 10H7a5 5 0 0 1 0-10zM15 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z"),
     Trash("M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"),

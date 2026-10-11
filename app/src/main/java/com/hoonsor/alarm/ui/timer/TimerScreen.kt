@@ -82,7 +82,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val PRESETS_MIN = listOf(1, 3, 5, 10, 15, 25, 45, 60)
-private val TIMER_TILE_HEIGHT = 140.dp
+private val TIMER_TILE_HEIGHT = 208.dp
 
 /** 計時器多選狀態；由 MainActivity 持有，選取時底部導覽列換成批次操作列 */
 class TimerSelection {
@@ -135,6 +135,8 @@ fun TimerScreen(selection: TimerSelection, onVoice: () -> Unit) {
     var keypad by remember { mutableStateOf(false) }
     var sort by remember { mutableStateOf(TimerSort.of(Graph.settings.timerSort)) }
     var sortDialog by remember { mutableStateOf(false) }
+    /** 點卡片編輯中的計時器 */
+    var editing by remember { mutableStateOf<TimerEntity?>(null) }
     val running = timers.count { it.state == TimerState.RUNNING }
     /** 新計時器要放的群組；-1 = 未分組 */
     var newGroupId by rememberSaveable { mutableLongStateOf(-1L) }
@@ -226,7 +228,7 @@ fun TimerScreen(selection: TimerSelection, onVoice: () -> Unit) {
                         groupColor = groupColor,
                         selecting = selection.active,
                         selected = t.id in selection.ids,
-                        onClick = { if (selection.active) selection.toggle(t.id) },
+                        onClick = { if (selection.active) selection.toggle(t.id) else editing = t },
                         onLongClick = { if (selection.active) selection.toggle(t.id) else selection.start(t.id) },
                         onPause = { scope.launch { repo.pauseTimer(t.id) } },
                         onResume = { scope.launch { repo.resumeTimer(t.id) } },
@@ -314,6 +316,7 @@ fun TimerScreen(selection: TimerSelection, onVoice: () -> Unit) {
             onDismiss = { keypad = false },
         )
     }
+    editing?.let { t -> TimerEditDialog(t, onDismiss = { editing = null }) }
     if (sortDialog) {
         ChoiceDialog(
             title = "計時器排序",
@@ -467,46 +470,33 @@ private fun NewTimerForm(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text("新增計時器", color = C.muted, fontSize = 12.sp, letterSpacing = 1.sp)
-        Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(C.field)
-                .clickable(onClickLabel = "自訂時長", onClick = onKeypad).padding(vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(hms(pickedMs), fontSize = 48.sp, fontWeight = FontWeight.SemiBold, color = C.text)
-            Text("時 : 分 : 秒 · 點一下輸入任意時間", fontSize = 12.sp, color = C.muted)
+        // 上下滑動滾輪設定時、分、秒；也可以改用數字鍵盤
+        DurationWheels(pickedMs) { onPick(it.coerceAtLeast(0)) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(hms(pickedMs), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = C.text, modifier = Modifier.weight(1f))
+            TextButton(onClick = onKeypad) { Text("數字鍵盤輸入", color = C.accentSoft, fontSize = 13.sp) }
         }
-        PRESETS_MIN.chunked(4).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                row.forEach { m ->
-                    val sel = m * 60_000L == pickedMs
-                    Box(
-                        Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(12.dp))
-                            .background(if (sel) C.accent else Color.Transparent)
-                            .border(1.dp, if (sel) C.accent else C.chipBorder, RoundedCornerShape(12.dp))
-                            .clickable { onPick(m * 60_000L) },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            if (m == 60) "1 小時" else "$m 分",
-                            color = if (sel) C.onAccent else C.textSoft, fontSize = 14.sp,
-                            fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
-                        )
-                    }
-                }
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            listOf(-60, -5, -1, 1, 5, 60).forEach { d ->
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PRESETS_MIN.forEach { m ->
+                val sel = m * 60_000L == pickedMs
                 Box(
-                    Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(12.dp)).background(C.field)
-                        .clickable { onPick((pickedMs + d * 60_000L).coerceIn(1_000L, 99 * 3_600_000L)) },
+                    Modifier.height(36.dp).clip(RoundedCornerShape(18.dp))
+                        .background(if (sel) C.accent else Color.Transparent)
+                        .border(1.dp, if (sel) C.accent else C.chipBorder, RoundedCornerShape(18.dp))
+                        .clickable { onPick(m * 60_000L) }
+                        .padding(horizontal = 14.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    val text = when (d) { 60 -> "+1 時"; -60 -> "-1 時"; else -> if (d > 0) "+$d 分" else "$d 分" }
-                    Text(text, color = C.muted, fontSize = 12.sp, maxLines = 1)
+                    Text(
+                        if (m == 60) "1 小時" else "$m 分",
+                        color = if (sel) C.onAccent else C.textSoft, fontSize = 13.sp,
+                        fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
+                    )
                 }
             }
         }
+        AddTimeRow(pickedMs, onPick)
+        RingAtLine(pickedMs)
         OutlinedTextField(
             value = label, onValueChange = onLabel, singleLine = true,
             label = { Text("響鈴時顯示的提醒") },
@@ -644,13 +634,13 @@ private fun TimerCard(
                 },
                 shape,
             )
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .combinedClickable(onClickLabel = "編輯計時器", onClick = onClick, onLongClick = onLongClick)
             .padding(12.dp),
-        verticalArrangement = Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         Text(
-            t.label.ifBlank { "計時器" }, color = C.textSoft, fontSize = 12.sp,
-            maxLines = 1, overflow = TextOverflow.Ellipsis,
+            t.label.ifBlank { "計時器" }, color = C.textSoft, fontSize = 12.sp, lineHeight = 16.sp,
+            maxLines = 2, overflow = TextOverflow.Ellipsis,
         )
         Text(
             Fmt.duration(remaining), fontSize = 23.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
@@ -662,24 +652,26 @@ private fun TimerCard(
             t.state == TimerState.PAUSED && remaining > 0 -> "繼續則 ${ringAt(nowWall + remaining, nowWall)} 響"
             else -> null
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            GlyphIcon(Glyph.Bell, null, tint = if (running) C.accentSoft else C.dim, size = 12.dp)
+        Row {
+            GlyphIcon(Glyph.Bell, null, tint = if (running) C.accentSoft else C.dim, size = 12.dp, modifier = Modifier.padding(top = 2.dp))
             Text(
-                " " + (ringText ?: status), color = if (running) C.accentSoft else C.muted, fontSize = 12.sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                " " + (ringText ?: status), color = if (running) C.accentSoft else C.muted, fontSize = 12.sp, lineHeight = 16.sp,
+                maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
         }
         Text(
             (if (ringText != null) "$status · " else "") + "共 ${Fmt.duration(t.durationMs)}",
-            color = C.dim, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            color = C.dim, fontSize = 11.sp, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
         )
+        Spacer(Modifier.weight(1f))
         Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color(0xFF262C3A))) {
             Box(
                 Modifier.fillMaxWidth(progress).height(4.dp).clip(RoundedCornerShape(3.dp))
                     .background(if (running) C.accent else C.nav),
             )
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             if (selecting) {
                 Box(
                     Modifier.size(26.dp).clip(CircleShape)
@@ -694,7 +686,7 @@ private fun TimerCard(
                     else -> RoundBtn(Glyph.Play, if (remaining < t.durationMs) "繼續" else "開始", filled = true, onClick = onResume)
                 }
                 // 停止＝停下並回到完整時長（執行中，或暫停在中途時才需要）
-                if (!done && (running || remaining < t.durationMs - 999)) {
+                if (!done && (running || kotlin.math.abs(remaining - t.durationMs) > 999)) {
                     RoundBtn(Glyph.Stop, "停止", filled = false, onClick = onReset)
                 }
                 RoundBtn(Glyph.Trash, "刪除", filled = false, onClick = onDelete, tint = C.danger)
@@ -706,16 +698,16 @@ private fun TimerCard(
 @Composable
 private fun RoundBtn(glyph: Glyph, label: String, filled: Boolean, onClick: () -> Unit, tint: Color = C.text) {
     Box(
-        Modifier.size(32.dp).clip(CircleShape)
+        Modifier.size(36.dp).clip(CircleShape)
             .background(if (filled) C.accent else Color.Transparent)
             .border(1.dp, if (filled) C.accent else C.borderHi, CircleShape)
             .clickable(onClickLabel = label, onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { GlyphIcon(glyph, label, tint = if (filled) C.onAccent else tint, size = 15.dp) }
+    ) { GlyphIcon(glyph, label, tint = if (filled) C.onAccent else tint, size = 16.dp) }
 }
 
 /** 響鈴時刻：今天顯示 14:35:20；跨日加「明天」或日期 */
-private fun ringAt(at: Long, now: Long): String {
+internal fun ringAt(at: Long, now: Long): String {
     val zone = java.time.ZoneId.systemDefault()
     val t = java.time.Instant.ofEpochMilli(at).atZone(zone)
     val days = java.time.temporal.ChronoUnit.DAYS.between(java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate(), t.toLocalDate())

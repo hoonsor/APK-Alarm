@@ -229,6 +229,23 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
 
     suspend fun resumeTimers(ids: Collection<Long>) = ids.forEach { resumeTimer(it) }
 
+    /**
+     * 編輯計時器剩下的時間與提醒。durationMs（最初建立的時長）不變，「重設」仍回到原本的時間。
+     * start = true：執行中的繼續跑、其他狀態直接開始；false：保持暫停。
+     */
+    suspend fun editTimer(id: Long, remainingMs: Long, label: String, start: Boolean) {
+        val t = timers.get(id) ?: return
+        val rem = remainingMs.coerceIn(1_000L, (99 * 3600L + 59 * 60L + 59) * 1000L)
+        val base = t.copy(label = label, pausedByGroup = false)
+        if (start || t.state == TimerState.RUNNING) {
+            t.groupId?.let { openTimerGroupSilently(it) }
+            timers.update(runningCopy(base, rem))
+        } else {
+            timers.update(base.copy(state = TimerState.PAUSED, remainingMs = rem, endAtWall = null, endAtElapsed = null))
+        }
+        scheduler.rescheduleAll("編輯計時")
+    }
+
     /** 全部重設：停止並回到完整時長 */
     suspend fun resetTimers(ids: Collection<Long>) {
         ids.forEach { id ->

@@ -34,8 +34,6 @@ class AlarmApp : Application() {
         super.onCreate()
         Graph.init(this)
         Notifications.createChannels(this)
-        // 每日自動備份（WorkManager 會自己記住排程，這裡只是確保設定與排程一致）
-        runCatching { com.hoonsor.alarm.backup.BackupRunner.schedule(this) }
         // 上次響鈴中途 App 被系統結束、沒來得及還原鬧鐘音量時，在這裡補還原
         val saved = Graph.settings.savedAlarmVolume
         if (saved >= 0) {

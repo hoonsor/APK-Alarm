@@ -147,64 +147,6 @@ class AppSettings(context: Context) {
         get() = (prefs.getString("swLaps", "") ?: "").split(',').mapNotNull { it.toLongOrNull() }
         set(v) = prefs.edit().putString("swLaps", v.joinToString(",")).apply()
 
-    // ---------- 備份 ----------
-
-    /** 每天自動備份（方案 B：存到手機「下載/HoonsorAlarm」，可再加上雲端） */
-    var autoBackupEnabled: Boolean
-        get() = prefs.getBoolean("autoBackupEnabled", true)
-        set(v) = prefs.edit().putBoolean("autoBackupEnabled", v).apply()
-
-    /** 自動備份額外上傳的雲端："none" / "dropbox" / "gdrive" */
-    var backupCloud: String
-        get() = prefs.getString("backupCloud", "none") ?: "none"
-        set(v) = prefs.edit().putString("backupCloud", v).apply()
-
-    /** 自動備份是否包含響鈴圖片與自訂鈴聲 */
-    var backupIncludeMedia: Boolean
-        get() = prefs.getBoolean("backupIncludeMedia", false)
-        set(v) = prefs.edit().putBoolean("backupIncludeMedia", v).apply()
-
-    /** 手機與雲端各保留最近幾份 */
-    var backupKeep: Int
-        get() = prefs.getInt("backupKeep", 7)
-        set(v) = prefs.edit().putInt("backupKeep", v.coerceIn(1, 60)).apply()
-
-    var lastBackupAt: Long
-        get() = prefs.getLong("lastBackupAt", 0L)
-        set(v) = prefs.edit().putLong("lastBackupAt", v).apply()
-
-    var lastBackupMessage: String
-        get() = prefs.getString("lastBackupMessage", "") ?: ""
-        set(v) = prefs.edit().putString("lastBackupMessage", v).apply()
-
-    var lastBackupOk: Boolean
-        get() = prefs.getBoolean("lastBackupOk", true)
-        set(v) = prefs.edit().putBoolean("lastBackupOk", v).apply()
-
-    /** Dropbox App key（使用者在 Dropbox 開發者後台建立，不是祕密） */
-    var dropboxAppKey: String
-        get() = prefs.getString("dropboxAppKey", "") ?: ""
-        set(v) = prefs.edit().putString("dropboxAppKey", v.trim()).apply()
-
-    /** Dropbox refresh token，以 Keystore 加密保存 */
-    var dropboxRefreshCipher: String?
-        get() = prefs.getString("dropboxRefreshCipher", null)
-        set(v) = prefs.edit().putString("dropboxRefreshCipher", v).apply()
-
-    /** Dropbox 登入進行中的 PKCE verifier（一次性，完成連結後清除） */
-    var dropboxPkceVerifier: String?
-        get() = prefs.getString("dropboxPkceVerifier", null)
-        set(v) = prefs.edit().putString("dropboxPkceVerifier", v).apply()
-
-    /** 使用者已在這支手機同意 Google 雲端硬碟授權（實際權杖由 Google Play 服務保管） */
-    var gdriveLinked: Boolean
-        get() = prefs.getBoolean("gdriveLinked", false)
-        set(v) = prefs.edit().putBoolean("gdriveLinked", v).apply()
-
-    var gdriveFolderId: String?
-        get() = prefs.getString("gdriveFolderId", null)
-        set(v) = prefs.edit().putString("gdriveFolderId", v).apply()
-
     /** 計時器排序：remaining_asc / remaining_desc / created_desc / created_asc / name_asc */
     var timerSort: String
         get() = prefs.getString("timerSort", "created_desc") ?: "created_desc"

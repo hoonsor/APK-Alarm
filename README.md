@@ -12,14 +12,14 @@
 - **語音念出提醒**：鬧鐘可改成用人聲念出提醒文字（可先念時間）取代鈴聲。可設定「念一次後改播鈴聲」，避免一直重複念。可用手機內建語音（免費、離線），或 MiniMax 雲端語音；雲端語音在儲存時就預先產生並存在手機，響鈴當下不需要網路，失敗時自動改用內建語音或鈴聲。語音一律以鬧鐘全音量播放，嫌小聲可在設定頁「語音增幅」再加大（最多 +15 dB）。
 - **個別音量與震動**：每個鬧鐘可指定音量與是否震動，響鈴結束後自動還原手機音量；也可設成「僅震動」的純震動鬧鐘，不出聲也不會打斷音樂。
 - **自訂鈴聲**：鬧鐘、計時器各有預設鈴聲，每個鬧鐘也可另外指定；可選系統鈴聲或匯入自己的 mp3。音檔會複製到 App 內，原檔刪除也不影響；無法播放時自動改用系統鈴聲。
-- **倒數計時與碼錶**：多個計時器同時進行，可用數字鍵盤點選時／分／秒輸入任意時長；計時器以兩欄卡片顯示，並標示幾點會響，可依剩餘時間或建立時間排序、長按多選批次分組、暫停、繼續、全部重設或刪除，也可分群組，群組開關一次暫停或繼續整組；碼錶支援分段並標示最快／最慢。兩者在 App 被關閉或鎖屏時都持續運作。
+- **倒數計時與碼錶**：多個計時器同時進行，可用上下滑動的時／分／秒滾輪或數字鍵盤設定時長，並即時顯示幾點會響；點卡片可修改剩下的時間（「重設」仍回到最初的時長）；計時器以兩欄卡片顯示，並標示幾點會響，可依剩餘時間或建立時間排序、長按多選批次分組、暫停、繼續、全部重設或刪除，也可分群組，群組開關一次暫停或繼續整組；碼錶支援分段並標示最快／最慢。兩者在 App 被關閉或鎖屏時都持續運作。
 - **語音建立**：說「每週一三五早上七點十五叫我晨跑」「二十五分鐘後提醒我起來走動」「把晨跑那個改成六點半」「新增鬧鐘群組叫上班，平日七點叫我出門」「關閉上班群組」即可建立或修改鬧鐘、計時器與群組；時間有歧義（例如凌晨說「明天早上」）會讓你選。
 - **AI 解析（MiniMax M3）**：在設定頁填入 API key 後，語音內容交給 MiniMax M3 理解，key 以手機 Keystore 加密保存。AI 只負責「提出」動作，一律經你確認才寫入，排程仍在手機本地執行；沒網路或 AI 失敗時自動改用離線解析。
 - **立即測試**：每個鬧鐘可按「測試」用實際設定試響；可靠度頁也能立即測試鈴聲與語音播報。
 - **響鈴可靠度檢查**：檢查精準鬧鐘、全螢幕響鈴、通知、電池最佳化、鬧鐘音量，並比對「App 預期」與「系統實際登記」的下一次響鈴。
 - **支援標準 Intent**：Google 助理或你自己的自動化工具可用 `ACTION_SET_ALARM`、`ACTION_SET_TIMER` 直接在本 App 建立鬧鐘與計時器。
 
-- **備份與還原**：鬧鐘、群組、計時器與設定可匯出成一個檔案（可選擇是否包含圖片與鈴聲），存檔時能直接存到 Google 雲端硬碟或 Dropbox；匯入可選「合併」或「取代」。另有每天自動備份（存到手機「下載/HoonsorAlarm」，可同時上傳 Dropbox 或 Google 雲端硬碟，保留最近幾份），以及 Android 系統的 Google 帳號備份，重新安裝或換手機時自動還原。
+- **備份與還原**：鬧鐘、群組、計時器與設定可打包成一個備份檔（可選擇是否包含圖片與鈴聲）。可以「分享」給 LINE、新增至 Dropbox、上傳到雲端硬碟等任何 App，或「儲存到檔案」；匯入可選「合併」或「取代」。手機開啟 Google 備份時，Android 也會自動備份並在重新安裝或換手機時還原。
 
 ## 為什麼比一般鬧鐘可靠
 
@@ -39,39 +39,6 @@
 
 單元測試：`./gradlew test`（涵蓋下次響鈴計算與語音解析）。
 
-## 雲端自動備份設定
-
-這是自用 App，沒有上架，所以 Dropbox 與 Google 雲端硬碟的「App 身分」要自己建立一次。只用手機本機備份或手動匯出的話，不需要做這些。
-
-### Dropbox（約 5 分鐘）
-
-1. 用電腦打開 <https://www.dropbox.com/developers/apps>，按 **Create app**。
-2. 選 **Scoped access** → **App folder**，名稱隨意（例如 `HoonsorAlarm-倬`），按 Create。
-3. 到 **Permissions** 分頁，勾選 `files.metadata.read`、`files.content.write`、`files.content.read`，按最下方 **Submit**。
-4. 回到 **Settings** 分頁，複製 **App key**（不需要 App secret，也不需要填 Redirect URI）。
-5. 在手機 App：設定 →「備份與還原」→ Dropbox，貼上 App key →「1. 開啟 Dropbox 登入」→ 在瀏覽器登入並按「允許」→ 複製畫面上顯示的代碼 → 回到 App 貼上 →「3. 完成連結」。
-6. 備份會放在 Dropbox 的「應用程式/你的 App 名稱」資料夾。
-
-> 一定要先做第 3 步再登入；先登入再改權限的話，要解除連結後重新連結一次。
-
-### Google 雲端硬碟（約 15 分鐘）
-
-1. 打開 <https://console.cloud.google.com/>，建立新專案（例如 `HoonsorAlarm`）。
-2. 「API 和服務」→「程式庫」，搜尋 **Google Drive API** → 啟用。
-3. 「Google Auth Platform」（或「OAuth 同意畫面」）：
-   - 使用者類型選 **外部**，填 App 名稱與你的 Email。
-   - 權限範圍加入 `.../auth/drive.file`（只能存取本 App 自己建立的檔案）。
-   - **發布狀態改成「正式版（In production）」**。`drive.file` 屬於非敏感權限，不需要 Google 審核；維持「測試中」的話，授權大約 7 天就會失效，自動備份會失敗。
-4. 「用戶端（Credentials）」→ 建立 OAuth 用戶端 ID → 類型選 **Android**：
-   - 套件名稱：`com.hoonsor.alarm`
-   - SHA-1：在 Android Studio 右側 Gradle 面板執行 `app › Tasks › android › signingReport`，複製 `Variant: debug` 下的 **SHA1**。
-     或在命令提示字元執行：
-     `keytool -list -v -keystore "%USERPROFILE%\.android\debug.keystore" -alias androiddebugkey -storepass android`
-5. 在手機 App：設定 →「備份與還原」→「連結 Google 雲端硬碟」→ 選帳號並允許。
-6. 備份會放在雲端硬碟根目錄的「HoonsorAlarm 備份」資料夾。
-
-> **兩台電腦都會編譯安裝時**：每台電腦的 debug 簽章不同，SHA-1 也不同。要在第 4 步為每台電腦各建一個 Android 用戶端（套件名稱相同、SHA-1 不同）。另外，用另一台電腦編譯的版本裝到手機上時，Android 會因為簽章不同而拒絕覆蓋安裝；要先解除安裝舊版（記得先匯出備份），或讓兩台電腦共用同一個 debug.keystore。
-
 ## 專案結構
 
 ```
@@ -83,7 +50,7 @@ app/src/main/java/com/hoonsor/alarm/
 ├── ringing/               響鈴前景服務、通知、響鈴畫面（圖片＋暗角）
 ├── image/ImageStore.kt    響鈴圖片匯入（複製壓縮到 App 內部）
 ├── sound/SoundStore.kt    鈴聲匯入、名稱、試聽
-├── backup/                匯出匯入、每日自動備份、Dropbox 與 Google 雲端硬碟
+├── backup/                備份檔匯出、匯入（合併／取代）
 ├── tts/TtsEngine.kt       語音播報（念出文字、MiniMax 預先產生與快取）
 ├── voice/                 語音辨識畫面、AI 解析（AiParser）與離線規則解析
 └── ui/                    鬧鐘、計時器、碼錶、可靠度、設定畫面
@@ -91,4 +58,4 @@ app/src/main/java/com/hoonsor/alarm/
 
 ## 版本
 
-目前 v0.8.0。進度與待辦見 [PROJECT_STATUS.md](PROJECT_STATUS.md)。
+目前 v0.9.0。進度與待辦見 [PROJECT_STATUS.md](PROJECT_STATUS.md)。
