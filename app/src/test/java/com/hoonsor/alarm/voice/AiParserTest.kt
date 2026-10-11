@@ -68,4 +68,21 @@ class AiParserTest {
         val r = AiParser.parseResponse("""{"actions":[],"error":"刪除請在 App 內長按鬧鐘操作"}""", ids, groups) as VoiceIntent.Unknown
         assertTrue(r.reason.contains("刪除"))
     }
+
+    @Test fun createGroupThenAlarmInNewGroup() {
+        val raw = """{"actions":[{"type":"create_group","name":"上班"},{"type":"create_alarm","hour":7,"minute":0,"days":[1,2,3,4,5],"memo":"出門","group_id":null,"group_name":"上班"}]}"""
+        val r = AiParser.parseResponse(raw, ids, groups) as VoiceIntent.Batch
+        assertEquals("上班", (r.actions[0] as VoiceIntent.CreateGroup).name)
+        val a = r.actions[1] as VoiceIntent.Alarm
+        assertNull(a.groupId)
+        assertEquals("上班", a.groupName)
+    }
+
+    @Test fun moveAndSwitchGroup() {
+        val m = AiParser.parseResponse("""{"actions":[{"type":"move_alarms","ids":[3,99],"group_id":1}]}""", ids, groups) as VoiceIntent.MoveAlarms
+        assertEquals(listOf(3L), m.alarmIds)
+        assertEquals(1L, m.groupId)
+        val s = AiParser.parseResponse("""{"actions":[{"type":"set_group","group_id":1,"enabled":false}]}""", ids, groups) as VoiceIntent.GroupSwitch
+        assertEquals(false, s.enabled)
+    }
 }

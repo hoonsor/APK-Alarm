@@ -25,13 +25,23 @@ object TtsEngine {
     const val ENGINE_MINIMAX = "minimax"
 
     /** 常用的 MiniMax 中文聲音（也可在設定頁手動輸入其他 voice_id） */
+    /**
+     * MiniMax 國際版系統聲音（platform.minimax.io 官方清單中的 Chinese (Mandarin) 聲音）。
+     * 官方只提供英文名稱，中文標籤依名稱翻譯；實際聲音以試聽為準。
+     */
     val MINIMAX_VOICES = listOf(
-        "Chinese (Mandarin)_Lyrical_Voice" to "抒情女聲",
-        "Chinese (Mandarin)_HK_Flight_Attendant" to "空服員女聲",
-        "female-shaonv" to "少女",
-        "female-yujie" to "御姐",
-        "male-qn-qingse" to "青澀青年",
-        "male-qn-jingying" to "菁英青年",
+        "Chinese (Mandarin)_Sweet_Lady" to "甜美女聲",
+        "Chinese (Mandarin)_Warm_Girl" to "溫暖女孩",
+        "Chinese (Mandarin)_Soft_Girl" to "溫柔女孩",
+        "Chinese (Mandarin)_Crisp_Girl" to "清脆女孩",
+        "Chinese (Mandarin)_Mature_Woman" to "成熟女聲",
+        "Chinese (Mandarin)_HK_Flight_Attendant" to "港式空服員",
+        "Chinese (Mandarin)_News_Anchor" to "新聞主播",
+        "Chinese (Mandarin)_Radio_Host" to "電台主持",
+        "Chinese (Mandarin)_Lyrical_Voice" to "抒情男聲",
+        "Chinese (Mandarin)_Gentleman" to "紳士男聲",
+        "Chinese (Mandarin)_Gentle_Youth" to "溫柔青年",
+        "Chinese (Mandarin)_Male_Announcer" to "男播音員",
     )
 
     /** 響鈴時要念的完整文字 */

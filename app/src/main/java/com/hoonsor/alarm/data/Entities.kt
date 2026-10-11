@@ -15,6 +15,7 @@ import androidx.room.PrimaryKey
  * vibrate：響鈴時是否震動。
  * speakMemo：響鈴時用語音念出提醒，取代鈴聲。
  * speakOnceThenRing：語音只念一次，之後改播鈴聲（避免一直重複念）。
+ * silent：純震動鬧鐘，不播放任何聲音（鈴聲與語音都不播）。
  * ttsCachePath / ttsCacheKey：雲端預先產生的語音檔與它對應的內容；內容不符時改用手機內建語音。
  */
 @Entity(tableName = "alarms")
@@ -36,6 +37,7 @@ data class AlarmEntity(
     @ColumnInfo(defaultValue = "1") val vibrate: Boolean = true,
     @ColumnInfo(defaultValue = "0") val speakMemo: Boolean = false,
     @ColumnInfo(defaultValue = "1") val speakOnceThenRing: Boolean = true,
+    @ColumnInfo(defaultValue = "0") val silent: Boolean = false,
     val ttsCachePath: String? = null,
     val ttsCacheKey: String? = null,
 )
@@ -58,6 +60,8 @@ data class AlarmGroupEntity(
  * 倒數計時器。
  * 執行中時以 endAtElapsed（同一次開機內最準確，不受改系統時間影響）為主，
  * 重新開機後 elapsedRealtime 歸零，改用 endAtWall。
+ * groupId：所屬計時器群組；null 代表未分組。
+ * pausedByGroup：因為群組被關閉而暫停；群組重新開啟時只繼續這些計時器。
  */
 @Entity(tableName = "timers")
 data class TimerEntity(
@@ -69,6 +73,22 @@ data class TimerEntity(
     val endAtWall: Long? = null,
     val endAtElapsed: Long? = null,
     val bootCount: Int? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+    val groupId: Long? = null,
+    @ColumnInfo(defaultValue = "0") val pausedByGroup: Boolean = false,
+)
+
+/**
+ * 計時器群組（與鬧鐘群組分開）。
+ * 關閉群組＝暫停群組內所有執行中的計時器；重新開啟＝繼續那些因關閉而暫停的計時器。
+ */
+@Entity(tableName = "timer_groups")
+data class TimerGroupEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val enabled: Boolean = true,
+    val expanded: Boolean = true,
+    val sortOrder: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
 )
 

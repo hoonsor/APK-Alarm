@@ -61,7 +61,8 @@ class AlarmsViewModel : ViewModel() {
         if (old != null && old != value) repo.purgeUnusedSounds(listOf(old))
     }
 
-    fun setSpeak(id: Long, speak: Boolean) = launch { repo.updateAlarm(id, "響鈴方式") { it.copy(speakMemo = speak) } }
+    fun setSpeak(id: Long, speak: Boolean) = launch { repo.updateAlarm(id, "響鈴方式") { it.copy(speakMemo = speak, silent = false) } }
+    fun setSilent(id: Long) = launch { repo.updateAlarm(id, "響鈴方式") { it.copy(silent = true, speakMemo = false) } }
     fun setVolume(id: Long, volume: Int?) = launch { repo.updateAlarm(id, "音量") { it.copy(volume = volume?.coerceIn(10, 100)) } }
     fun setSpeakOnce(id: Long, once: Boolean) = launch { repo.updateAlarm(id, "單次語音") { it.copy(speakOnceThenRing = once) } }
     fun setVibrate(id: Long, vibrate: Boolean) = launch { repo.updateAlarm(id, "震動") { it.copy(vibrate = vibrate) } }

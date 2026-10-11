@@ -12,6 +12,7 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
     private val alarms = db.alarmDao()
     private val timers = db.timerDao()
     private val groups = db.groupDao()
+    private val timerGroups = db.timerGroupDao()
 
     // ---------- 鬧鐘 ----------
 
@@ -97,6 +98,13 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
         return groups.insert(AlarmGroupEntity(name = name.trim().ifBlank { "新群組" }, sortOrder = order))
     }
 
+    /** 依名稱找鬧鐘群組（不分大小寫、忽略空白），找不到就建立；語音建立時使用 */
+    suspend fun findOrCreateGroup(name: String): Long {
+        val key = name.trim()
+        groups.getAll().firstOrNull { it.name.trim().equals(key, ignoreCase = true) }?.let { return it.id }
+        return addGroup(key)
+    }
+
     suspend fun renameGroup(id: Long, name: String) {
         val g = groups.get(id) ?: return
         groups.update(g.copy(name = name.trim().ifBlank { g.name }))
@@ -134,8 +142,10 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
 
     // ---------- 計時器 ----------
 
-    suspend fun startTimer(durationMs: Long, label: String): Long {
-        val t = runningCopy(TimerEntity(durationMs = durationMs, label = label), durationMs)
+    suspend fun startTimer(durationMs: Long, label: String, groupId: Long? = null): Long {
+        val gid = groupId?.takeIf { timerGroups.get(it) != null }
+        gid?.let { openTimerGroupSilently(it) }
+        val t = runningCopy(TimerEntity(durationMs = durationMs, label = label, groupId = gid), durationMs)
         val id = timers.insert(t)
         scheduler.rescheduleAll("開始計時")
         return id
@@ -154,13 +164,16 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
     suspend fun resumeTimer(id: Long) {
         val t = timers.get(id) ?: return
         if (t.state != TimerState.PAUSED || t.remainingMs <= 0) return
+        t.groupId?.let { openTimerGroupSilently(it) }
         timers.update(runningCopy(t, t.remainingMs))
         scheduler.rescheduleAll("繼續計時")
     }
 
     suspend fun resetTimer(id: Long) {
         val t = timers.get(id) ?: return
-        timers.update(t.copy(state = TimerState.PAUSED, remainingMs = t.durationMs, endAtWall = null, endAtElapsed = null))
+        timers.update(
+            t.copy(state = TimerState.PAUSED, remainingMs = t.durationMs, endAtWall = null, endAtElapsed = null, pausedByGroup = false),
+        )
         scheduler.rescheduleAll("重設計時")
     }
 
@@ -177,12 +190,82 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
         scheduler.rescheduleAll("計時貪睡")
     }
 
+    // ---------- 計時器群組 ----------
+
+    suspend fun addTimerGroup(name: String): Long {
+        val order = timerGroups.maxSortOrder() + 1
+        return timerGroups.insert(TimerGroupEntity(name = name.trim().ifBlank { "新群組" }, sortOrder = order))
+    }
+
+    suspend fun findOrCreateTimerGroup(name: String): Long {
+        val key = name.trim()
+        timerGroups.getAll().firstOrNull { it.name.trim().equals(key, ignoreCase = true) }?.let { return it.id }
+        return addTimerGroup(key)
+    }
+
+    suspend fun renameTimerGroup(id: Long, name: String) {
+        val g = timerGroups.get(id) ?: return
+        timerGroups.update(g.copy(name = name.trim().ifBlank { g.name }))
+    }
+
+    suspend fun setTimerGroupExpanded(id: Long, expanded: Boolean) {
+        val g = timerGroups.get(id) ?: return
+        timerGroups.update(g.copy(expanded = expanded))
+    }
+
+    /**
+     * 關閉：暫停群組內所有執行中的計時器，並記住是被群組暫停的。
+     * 開啟：繼續那些因關閉群組而暫停的計時器；使用者自己暫停的維持暫停。
+     */
+    suspend fun setTimerGroupEnabled(id: Long, enabled: Boolean) {
+        val g = timerGroups.get(id) ?: return
+        if (g.enabled == enabled) return
+        timerGroups.update(g.copy(enabled = enabled))
+        val list = timers.getByGroup(id)
+        if (!enabled) {
+            val boot = AlarmScheduler.bootCount(Graph.appContext)
+            val nowWall = System.currentTimeMillis()
+            val nowElapsed = SystemClock.elapsedRealtime()
+            list.filter { it.state == TimerState.RUNNING }.forEach { t ->
+                val remaining = com.hoonsor.alarm.domain.NextTrigger.timerRemaining(t, nowWall, nowElapsed, boot)
+                timers.update(
+                    t.copy(state = TimerState.PAUSED, remainingMs = remaining, endAtWall = null, endAtElapsed = null, pausedByGroup = true),
+                )
+            }
+        } else {
+            list.filter { it.pausedByGroup && it.state == TimerState.PAUSED && it.remainingMs > 0 }.forEach { t ->
+                timers.update(runningCopy(t, t.remainingMs))
+            }
+        }
+        scheduler.rescheduleAll(if (enabled) "開啟計時群組" else "關閉計時群組")
+    }
+
+    /** 刪除計時器群組：計時器移到「未分組」，不會被刪除 */
+    suspend fun deleteTimerGroup(id: Long) {
+        timers.ungroup(id)
+        timerGroups.delete(id)
+    }
+
+    suspend fun moveTimerToGroup(timerId: Long, groupId: Long?) {
+        val t = timers.get(timerId) ?: return
+        timers.update(t.copy(groupId = groupId, pausedByGroup = false))
+    }
+
+    /** 在已關閉的群組裡開始或繼續計時：群組自動打開（其他被群組暫停的計時器改為一般暫停） */
+    private suspend fun openTimerGroupSilently(groupId: Long) {
+        val g = timerGroups.get(groupId) ?: return
+        if (g.enabled) return
+        timerGroups.update(g.copy(enabled = true))
+        timers.getByGroup(groupId).filter { it.pausedByGroup }.forEach { timers.update(it.copy(pausedByGroup = false)) }
+    }
+
     private fun runningCopy(t: TimerEntity, remaining: Long): TimerEntity {
         val nowWall = System.currentTimeMillis()
         val nowElapsed = SystemClock.elapsedRealtime()
         return t.copy(
             state = TimerState.RUNNING,
             remainingMs = remaining,
+            pausedByGroup = false,
             endAtWall = nowWall + remaining,
             endAtElapsed = nowElapsed + remaining,
             bootCount = AlarmScheduler.bootCount(Graph.appContext),

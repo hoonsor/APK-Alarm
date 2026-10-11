@@ -22,6 +22,8 @@ data class RingInfo(
     val speakFile: String? = null,
     /** 語音念一次後改播鈴聲 */
     val speakOnce: Boolean = false,
+    /** 純震動：不播放任何聲音 */
+    val silent: Boolean = false,
     /** 測試響鈴：不更動任何鬧鐘資料、不留下錯過通知 */
     val isTest: Boolean = false,
 ) {
@@ -39,6 +41,7 @@ data class RingInfo(
         .putExtra("ri_speak", speakText)
         .putExtra("ri_speak_file", speakFile)
         .putExtra("ri_speak_once", speakOnce)
+        .putExtra("ri_silent", silent)
         .putExtra("ri_test", isTest)
 
     companion object {
@@ -59,6 +62,7 @@ data class RingInfo(
                 speakText = intent.getStringExtra("ri_speak"),
                 speakFile = intent.getStringExtra("ri_speak_file"),
                 speakOnce = intent.getBooleanExtra("ri_speak_once", false),
+                silent = intent.getBooleanExtra("ri_silent", false),
                 isTest = intent.getBooleanExtra("ri_test", false),
             )
         }

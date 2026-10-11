@@ -456,7 +456,8 @@ private fun AlarmTile(
                     }
                 }
                 if (alarm.imagePath != null) GlyphIcon(Glyph.Image, "有響鈴圖片", tint = C.muted, size = 12.dp)
-                if (alarm.speakMemo) GlyphIcon(Glyph.Speaker, "語音念出提醒", tint = C.muted, size = 12.dp)
+                if (alarm.silent) GlyphIcon(Glyph.Vibrate, "純震動", tint = C.muted, size = 12.dp)
+                else if (alarm.speakMemo) GlyphIcon(Glyph.Speaker, "語音念出提醒", tint = C.muted, size = 12.dp)
                 else if (alarm.soundUri != null) GlyphIcon(Glyph.Music, "自訂鈴聲", tint = C.muted, size = 12.dp)
             }
             // 提醒列：標籤 + 一行提醒文字，超過以「…」省略

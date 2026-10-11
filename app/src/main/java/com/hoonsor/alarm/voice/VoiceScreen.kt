@@ -95,7 +95,7 @@ fun VoiceScreen(onClose: () -> Unit, onCreated: (String) -> Unit) {
             phase = Phase.ERROR; error = "沒有內容可以解析"; return
         }
         if (!AiParser.isConfigured()) {
-            result = VoiceParser.parse(text)
+            result = VoiceParser.parse(text, groups = groups.map { it.id to it.name })
             source = "離線解析（未設定 AI，可在設定頁填入 MiniMax API key）"
             phase = Phase.RESULT
             return
@@ -105,12 +105,13 @@ fun VoiceScreen(onClose: () -> Unit, onCreated: (String) -> Unit) {
             val t0 = SystemClock.elapsedRealtime()
             val latestAlarms = Graph.db.alarmDao().getAll().also { alarms = it }
             val latestGroups = Graph.db.groupDao().getAll().also { groups = it }
+            val latestTimerGroups = Graph.db.timerGroupDao().getAll()
             try {
-                result = AiParser.parse(text, latestAlarms, latestGroups)
+                result = AiParser.parse(text, latestAlarms, latestGroups, latestTimerGroups)
                 val sec = (SystemClock.elapsedRealtime() - t0) / 100 / 10.0
                 source = "${Graph.settings.aiModel} 解析完成 · $sec 秒"
             } catch (e: Exception) {
-                result = VoiceParser.parse(text)
+                result = VoiceParser.parse(text, groups = latestGroups.map { it.id to it.name })
                 source = "AI 無法使用，已改用離線解析（${e.message ?: e.javaClass.simpleName}）"
             }
             phase = Phase.RESULT
@@ -313,18 +314,19 @@ fun VoiceScreen(onClose: () -> Unit, onCreated: (String) -> Unit) {
                                     verticalArrangement = Arrangement.spacedBy(4.dp),
                                 ) {
                                     Text(label, color = C.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                                    Text(describe(opt, alarms), color = C.muted, fontSize = 13.sp)
+                                    Text(describe(opt, alarms, groups), color = C.muted, fontSize = 13.sp)
                                 }
                             }
                         }
                         is VoiceIntent.Unknown -> Text(r.reason, color = C.warnText, fontSize = 15.sp)
-                        is VoiceIntent.Alarm, is VoiceIntent.Timer, is VoiceIntent.Update, is VoiceIntent.Batch ->
+                        is VoiceIntent.Alarm, is VoiceIntent.Timer, is VoiceIntent.Update, is VoiceIntent.Batch,
+                        is VoiceIntent.CreateGroup, is VoiceIntent.MoveAlarms, is VoiceIntent.GroupSwitch ->
                             Proposal(r, alarms, groups)
                         null -> Unit
                     }
                 }
                 Phase.LISTENING -> Text(
-                    "可以這樣說：\n「每週一三五早上七點十五叫我晨跑」\n「平日六點半」\n「二十五分鐘後提醒我起來走動」\n「把晨跑那個改成六點半」",
+                    "可以這樣說：\n「每週一三五早上七點十五叫我晨跑」\n「平日六點半」\n「二十五分鐘後提醒我起來走動」\n「把晨跑那個改成六點半」\n「新增鬧鐘群組叫上班，平日七點叫我出門」\n「關閉上班群組」",
                     color = C.muted, fontSize = 14.sp, lineHeight = 24.sp,
                 )
             }
@@ -342,7 +344,13 @@ fun VoiceScreen(onClose: () -> Unit, onCreated: (String) -> Unit) {
                     onClick = { runIntent(r) },
                     modifier = Modifier.weight(2f).height(54.dp), shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = C.accent, contentColor = C.onAccent),
-                ) { Text(if (r is VoiceIntent.Update) "確認修改" else "確認建立", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+                ) {
+                    val label = when (r) {
+                        is VoiceIntent.Update, is VoiceIntent.MoveAlarms, is VoiceIntent.GroupSwitch -> "確認修改"
+                        else -> "確認建立"
+                    }
+                    Text(label, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
@@ -354,17 +362,32 @@ private suspend fun execute(intent: VoiceIntent, alarms: List<AlarmEntity>): Str
     return when (intent) {
         is VoiceIntent.Alarm -> {
             val notBefore = intent.notBeforeDate?.atStartOfDay(ZoneId.systemDefault())?.toInstant()?.toEpochMilli()
+            val groupId = intent.groupId ?: intent.groupName?.takeIf { it.isNotBlank() }?.let { repo.findOrCreateGroup(it) }
             repo.addAlarm(
                 AlarmEntity(
                     hour = intent.hour, minute = intent.minute, daysMask = intent.daysMask,
-                    memo = intent.memo, notBefore = notBefore, groupId = intent.groupId,
+                    memo = intent.memo, notBefore = notBefore, groupId = groupId,
                 ),
             )
             "已建立 ${Fmt.hm(intent.hour, intent.minute)} 鬧鐘（${Days.summary(intent.daysMask)}）"
         }
         is VoiceIntent.Timer -> {
-            repo.startTimer(intent.durationMs, intent.memo)
+            val groupId = intent.groupName?.takeIf { it.isNotBlank() }?.let { repo.findOrCreateTimerGroup(it) }
+            repo.startTimer(intent.durationMs, intent.memo, groupId)
             "已開始 ${Fmt.duration(intent.durationMs)} 計時"
+        }
+        is VoiceIntent.CreateGroup -> {
+            if (intent.forTimer) repo.findOrCreateTimerGroup(intent.name) else repo.findOrCreateGroup(intent.name)
+            "已建立${if (intent.forTimer) "計時器" else "鬧鐘"}群組「${intent.name}」"
+        }
+        is VoiceIntent.MoveAlarms -> {
+            val groupId = intent.groupId ?: intent.groupName?.takeIf { it.isNotBlank() }?.let { repo.findOrCreateGroup(it) }
+            repo.moveToGroup(intent.alarmIds, groupId)
+            "已移動 ${intent.alarmIds.size} 個鬧鐘"
+        }
+        is VoiceIntent.GroupSwitch -> {
+            repo.setGroupEnabled(intent.groupId, intent.enabled)
+            if (intent.enabled) "已開啟群組" else "已關閉群組"
         }
         is VoiceIntent.Update -> {
             repo.updateAlarm(intent.alarmId, "語音修改") { a ->
@@ -387,13 +410,33 @@ private suspend fun execute(intent: VoiceIntent, alarms: List<AlarmEntity>): Str
 }
 
 /** 一句話描述動作，用在選項卡片與完成提示 */
-private fun describe(intent: VoiceIntent, alarms: List<AlarmEntity>): String = when (intent) {
+/** 群組顯示名稱；名稱指定但尚未存在時標示「新」 */
+private fun groupLabel(groupId: Long?, groupName: String?, groups: List<AlarmGroupEntity>): String? {
+    groupId?.let { id -> groups.firstOrNull { it.id == id }?.let { return it.name } }
+    val n = groupName?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return if (groups.any { it.name.trim().equals(n, ignoreCase = true) }) n else "$n（新）"
+}
+
+private fun describe(intent: VoiceIntent, alarms: List<AlarmEntity>, groups: List<AlarmGroupEntity> = emptyList()): String = when (intent) {
     is VoiceIntent.Alarm -> buildString {
         append("鬧鐘 ${Fmt.hm(intent.hour, intent.minute)} · ${Days.summary(intent.daysMask)}")
         intent.notBeforeDate?.let { append(" · ${it.monthValue}/${it.dayOfMonth}") }
         if (intent.memo.isNotBlank()) append(" · ${intent.memo}")
+        groupLabel(intent.groupId, intent.groupName, groups)?.let { append(" · 群組「$it」") }
     }
-    is VoiceIntent.Timer -> "計時 ${Fmt.duration(intent.durationMs)}" + if (intent.memo.isNotBlank()) " · ${intent.memo}" else ""
+    is VoiceIntent.Timer -> "計時 ${Fmt.duration(intent.durationMs)}" + (if (intent.memo.isNotBlank()) " · ${intent.memo}" else "") +
+        (intent.groupName?.let { " · 群組「$it」" } ?: "")
+    is VoiceIntent.CreateGroup -> "建立${if (intent.forTimer) "計時器" else "鬧鐘"}群組「${intent.name}」"
+    is VoiceIntent.MoveAlarms -> {
+        val names = intent.alarmIds.mapNotNull { id -> alarms.firstOrNull { it.id == id } }
+            .joinToString("、") { Fmt.hm(it.hour, it.minute) + if (it.memo.isNotBlank()) " ${it.memo}" else "" }
+        val target = groupLabel(intent.groupId, intent.groupName, groups)?.let { "群組「$it」" } ?: "未分組"
+        "把 $names 移到$target"
+    }
+    is VoiceIntent.GroupSwitch -> {
+        val name = groups.firstOrNull { it.id == intent.groupId }?.name ?: "群組"
+        (if (intent.enabled) "開啟" else "關閉") + "群組「$name」" + if (intent.enabled) "（各鬧鐘恢復原本開關）" else "（群組內鬧鐘暫停）"
+    }
     is VoiceIntent.Update -> {
         val a = alarms.firstOrNull { it.id == intent.alarmId }
         val before = a?.let { Fmt.hm(it.hour, it.minute) + if (it.memo.isNotBlank()) " ${it.memo}" else "" } ?: "鬧鐘"
@@ -407,7 +450,7 @@ private fun describe(intent: VoiceIntent, alarms: List<AlarmEntity>): String = w
         }
         "$before：" + changes.ifEmpty { listOf("沒有變更") }.joinToString("、")
     }
-    is VoiceIntent.Batch -> intent.actions.joinToString("；") { describe(it, alarms) }
+    is VoiceIntent.Batch -> intent.actions.joinToString("；") { describe(it, alarms, groups) }
     is VoiceIntent.Ambiguous -> intent.question
     is VoiceIntent.Unknown -> intent.reason
 }
@@ -418,6 +461,15 @@ private fun Proposal(r: VoiceIntent, alarms: List<AlarmEntity>, groups: List<Ala
         is VoiceIntent.Alarm -> AlarmProposal(r, groups)
         is VoiceIntent.Timer -> TimerProposal(r)
         is VoiceIntent.Update -> UpdateProposal(r, alarms)
+        is VoiceIntent.CreateGroup, is VoiceIntent.MoveAlarms, is VoiceIntent.GroupSwitch ->
+            SimpleProposal(
+                when (r) {
+                    is VoiceIntent.CreateGroup -> "建立群組"
+                    is VoiceIntent.GroupSwitch -> "群組開關"
+                    else -> "移動群組"
+                },
+                describe(r, alarms, groups),
+            )
         is VoiceIntent.Batch -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("共 ${r.actions.size} 個動作", color = C.muted, fontSize = 13.sp)
             r.actions.forEach { Proposal(it, alarms, groups) }
@@ -433,7 +485,7 @@ private fun AlarmProposal(r: VoiceIntent.Alarm, groups: List<AlarmGroupEntity>) 
             .border(1.dp, C.accent.copy(alpha = 0.55f), RoundedCornerShape(22.dp)).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        val groupName = r.groupId?.let { id -> groups.firstOrNull { it.id == id }?.name }
+        val groupName = groupLabel(r.groupId, r.groupName, groups)
         Text("新增鬧鐘" + (groupName?.let { " · 群組「$it」" } ?: ""), color = C.accentSoft, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         Row(verticalAlignment = Alignment.Bottom) {
             Text(Fmt.hm(r.hour, r.minute), color = C.text, fontSize = 56.sp, fontWeight = FontWeight.SemiBold)
@@ -460,7 +512,7 @@ private fun TimerProposal(r: VoiceIntent.Timer) {
             .border(1.dp, C.accent.copy(alpha = 0.55f), RoundedCornerShape(22.dp)).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("開始計時", color = C.accentSoft, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Text("開始計時" + (r.groupName?.let { " · 群組「$it」" } ?: ""), color = C.accentSoft, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         Text(Fmt.duration(r.durationMs), color = C.text, fontSize = 56.sp, fontWeight = FontWeight.SemiBold)
         if (r.memo.isNotBlank()) Text("提醒：${r.memo}", color = C.textSoft, fontSize = 16.sp)
     }
@@ -475,5 +527,17 @@ private fun UpdateProposal(r: VoiceIntent.Update, alarms: List<AlarmEntity>) {
     ) {
         Text("修改鬧鐘", color = C.accentSoft, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         Text(describe(r, alarms), color = C.text, fontSize = 17.sp, lineHeight = 26.sp)
+    }
+}
+
+@Composable
+private fun SimpleProposal(title: String, body: String) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(C.surfaceHi)
+            .border(1.dp, C.accent.copy(alpha = 0.55f), RoundedCornerShape(22.dp)).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(title, color = C.accentSoft, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Text(body, color = C.text, fontSize = 17.sp, lineHeight = 26.sp)
     }
 }

@@ -15,9 +15,21 @@ sealed interface VoiceIntent {
         /** 只響一次時，不得早於這一天的 00:00 */
         val notBeforeDate: LocalDate? = null,
         val groupId: Long? = null,
+        /** 依名稱指定群組（現有的或要新建的）；groupId 為 null 時使用，找不到同名群組就建立 */
+        val groupName: String? = null,
     ) : VoiceIntent
 
-    data class Timer(val durationMs: Long, val memo: String) : VoiceIntent
+    /** groupName：放進這個計時器群組（找不到同名群組就建立） */
+    data class Timer(val durationMs: Long, val memo: String, val groupName: String? = null) : VoiceIntent
+
+    /** 建立群組；forTimer = true 時建立計時器群組。同名群組已存在時不重複建立 */
+    data class CreateGroup(val name: String, val forTimer: Boolean = false) : VoiceIntent
+
+    /** 把鬧鐘移到群組；groupId 與 groupName 都是 null 代表移到「未分組」 */
+    data class MoveAlarms(val alarmIds: List<Long>, val groupId: Long? = null, val groupName: String? = null) : VoiceIntent
+
+    /** 開啟或關閉鬧鐘群組 */
+    data class GroupSwitch(val groupId: Long, val enabled: Boolean) : VoiceIntent
 
     /** 修改既有鬧鐘；null 欄位代表不變 */
     data class Update(
@@ -46,28 +58,59 @@ sealed interface VoiceIntent {
 object VoiceParser {
     private const val NUM = "[0-9零〇一二兩三四五六七八九十百]+"
 
-    fun parse(raw: String, now: LocalDateTime = LocalDateTime.now(ZoneId.systemDefault())): VoiceIntent {
-        val text = raw.replace(" ", "").replace("，", ",").replace("。", "")
-        if (text.isBlank()) return VoiceIntent.Unknown("沒有聽到內容")
+    /**
+     * @param groups 現有鬧鐘群組（id 與名稱），用來辨識「關閉上班群組」這類指令
+     */
+    fun parse(
+        raw: String,
+        now: LocalDateTime = LocalDateTime.now(ZoneId.systemDefault()),
+        groups: List<Pair<Long, String>> = emptyList(),
+    ): VoiceIntent {
+        val full = raw.replace(" ", "").replace("，", ",").replace("。", "")
+        if (full.isBlank()) return VoiceIntent.Unknown("沒有聽到內容")
 
+        parseGroupSwitch(full, groups)?.let { return it }
+
+        // 群組相關片語：先抽出來，剩下的文字再解析時間與提醒，避免群組名稱混進提醒文字
+        val create = findCreateGroup(full)
+        var text = create?.let { full.removeRange(it.range) } ?: full
+        val ref = findGroupRef(text)
+        if (ref != null) text = text.removeRange(ref.range)
+        val groupName = ref?.name ?: create?.name
+        val forTimer = create?.forTimer == true || (create != null && parseTimer(text) != null)
+        val createIntent = create?.let { VoiceIntent.CreateGroup(it.name, forTimer) }
+
+        if (create == null && Regex("(?:新增|建立|創建|新建)(?:一個|個)?(?:新的)?(?:鬧鐘|計時器?)?群組$").containsMatchIn(full)) {
+            return VoiceIntent.Unknown("請說出群組名稱，例如「新增鬧鐘群組叫上班」或「建立運動群組」")
+        }
+        val main = parseMain(text.trim(','), now, groupName)
+        return when {
+            createIntent == null -> main
+            main is VoiceIntent.Unknown -> createIntent
+            else -> VoiceIntent.Batch(listOf(createIntent, main))
+        }
+    }
+
+    private fun parseMain(text: String, now: LocalDateTime, groupName: String?): VoiceIntent {
+        if (text.isBlank()) return VoiceIntent.Unknown("沒有聽到內容")
         val memo = extractMemo(text)
 
-        parseTimer(text)?.let { return VoiceIntent.Timer(it, memo) }
+        parseTimer(text)?.let { return VoiceIntent.Timer(it, memo, groupName) }
 
         val time = parseClock(text) ?: return VoiceIntent.Unknown("聽不出時間，試試「早上七點十五」或「二十五分鐘後」")
         val (hour, minute) = time
         val mask = parseDays(text)
-        if (mask != 0) return VoiceIntent.Alarm(hour, minute, mask, memo)
+        if (mask != 0) return VoiceIntent.Alarm(hour, minute, mask, memo, groupName = groupName)
 
         val today = now.toLocalDate()
         return when {
-            text.contains("後天") -> VoiceIntent.Alarm(hour, minute, 0, memo, today.plusDays(2))
+            text.contains("後天") -> VoiceIntent.Alarm(hour, minute, 0, memo, today.plusDays(2), groupName = groupName)
             text.contains("明天") || text.contains("明早") -> {
                 val targetToday = now.toLocalDate().atTime(hour, minute)
                 // 凌晨說「明天早上」：可能是指天亮後的今天
                 if (now.hour < 5 && targetToday.isAfter(now)) {
-                    val todayOpt = VoiceIntent.Alarm(hour, minute, 0, memo, today)
-                    val tomorrowOpt = VoiceIntent.Alarm(hour, minute, 0, memo, today.plusDays(1))
+                    val todayOpt = VoiceIntent.Alarm(hour, minute, 0, memo, today, groupName = groupName)
+                    val tomorrowOpt = VoiceIntent.Alarm(hour, minute, 0, memo, today.plusDays(1), groupName = groupName)
                     VoiceIntent.Ambiguous(
                         "「明天」是指哪一天？現在是 ${now.monthValue}/${now.dayOfMonth} %02d:%02d，天還沒亮。".format(now.hour, now.minute),
                         listOf(
@@ -76,11 +119,65 @@ object VoiceParser {
                         ),
                     )
                 } else {
-                    VoiceIntent.Alarm(hour, minute, 0, memo, today.plusDays(1))
+                    VoiceIntent.Alarm(hour, minute, 0, memo, today.plusDays(1), groupName = groupName)
                 }
             }
-            else -> VoiceIntent.Alarm(hour, minute, 0, memo)
+            else -> VoiceIntent.Alarm(hour, minute, 0, memo, groupName = groupName)
         }
+    }
+
+    // ---------- 群組 ----------
+
+    private data class GroupPhrase(val name: String, val range: IntRange, val forTimer: Boolean = false)
+
+    private const val NAME = "[^,、「」到在進放加移裡內的]{1,12}?"
+
+    /** 「新增鬧鐘群組叫上班」「建立一個群組名為運動」「新增上班群組」「建立『家事』計時器群組」 */
+    private fun findCreateGroup(t: String): GroupPhrase? {
+        val verb = "(?:幫我)?(?:新增|建立|創建|新建|開|設立)(?:一個|個)?(?:新的)?"
+        Regex("$verb(鬧鐘|計時器?)?群組(?:叫做|叫|名為|名稱是|名稱為|命名為|:|：)「?([^,、「」]{1,20})」?").find(t)?.let { m ->
+            val name = cleanName(m.groupValues[2])
+            val g2 = m.groups[2]
+            if (name.isNotEmpty() && g2 != null) {
+                // 只移除到名稱結尾，名稱後面的時間、提醒要留給後續解析
+                val end = g2.range.first + g2.value.indexOf(name).coerceAtLeast(0) + name.length - 1
+                return GroupPhrase(name, m.range.first..end, m.groupValues[1].startsWith("計時"))
+            }
+        }
+        Regex("$verb「?($NAME)」?的?(鬧鐘|計時器?)?群組").find(t)?.let { m ->
+            val name = cleanName(m.groupValues[1])
+            if (name.isNotEmpty() && name != "鬧鐘" && name != "計時器") {
+                return GroupPhrase(name, m.range, m.groupValues[2].startsWith("計時"))
+            }
+        }
+        return null
+    }
+
+    /** 「放到上班群組」「加入運動群組裡」「在家事群組」 */
+    private fun findGroupRef(t: String): GroupPhrase? {
+        val m = Regex("(?:放到|放在|放進|加到|加入|移到|歸到|分到|到|在|進)「?($NAME)」?(?:這個|那個)?(?:鬧鐘|計時器?)?群組(?:裡面|裡|內|中)?").find(t)
+            ?: return null
+        val name = cleanName(m.groupValues[1])
+        return if (name.isEmpty()) null else GroupPhrase(name, m.range)
+    }
+
+    /** 「關閉上班群組」「打開運動群組」：只認現有群組 */
+    private fun parseGroupSwitch(t: String, groups: List<Pair<Long, String>>): VoiceIntent? {
+        if (groups.isEmpty()) return null
+        val m = Regex("(關閉|關掉|關|停用|暫停|打開|開啟|啟用|恢復|開)「?(.{1,12}?)」?(?:這個|那個)?群組").find(t) ?: return null
+        val name = cleanName(m.groupValues[2])
+        val g = groups.firstOrNull { it.second.trim().equals(name, ignoreCase = true) } ?: return null
+        val on = m.groupValues[1] in setOf("打開", "開啟", "啟用", "恢復", "開")
+        return VoiceIntent.GroupSwitch(g.first, on)
+    }
+
+    /** 群組名稱遇到「並」「然後」或時間就截斷，例如「上班然後七點叫我」→「上班」 */
+    private fun cleanName(raw: String): String {
+        var n = raw
+        listOf("並且", "並", "然後", "再", "裡面", "裡", ",", "、").forEach { sep -> n = n.substringBefore(sep) }
+        n = n.replace(Regex("(凌晨|清晨|早上|上午|中午|下午|傍晚|晚上|每天|每週|平日|週末|明天|後天).*$"), "")
+        n = n.replace(Regex("$NUM[點:：].*$"), "")
+        return n.trim('「', '」', '"', ' ').take(12)
     }
 
     // ---------- 計時器 ----------

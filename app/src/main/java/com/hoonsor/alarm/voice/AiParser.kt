@@ -5,6 +5,7 @@ import com.hoonsor.alarm.Graph
 import com.hoonsor.alarm.data.AlarmEntity
 import com.hoonsor.alarm.data.AlarmGroupEntity
 import com.hoonsor.alarm.data.KeyVault
+import com.hoonsor.alarm.data.TimerGroupEntity
 import com.hoonsor.alarm.domain.Days
 import com.hoonsor.alarm.domain.Fmt
 import kotlinx.coroutines.Dispatchers
@@ -38,11 +39,12 @@ object AiParser {
         transcript: String,
         alarms: List<AlarmEntity>,
         groups: List<AlarmGroupEntity>,
+        timerGroups: List<TimerGroupEntity> = emptyList(),
         now: LocalDateTime = LocalDateTime.now(ZoneId.systemDefault()),
     ): VoiceIntent = withContext(Dispatchers.IO) {
         val s = Graph.settings
         val key = KeyVault.decrypt(s.aiKeyCipher) ?: throw AiException("尚未設定 API key")
-        val content = chat(s.aiBaseUrl, s.aiModel, key, systemPrompt(alarms, groups, now), transcript)
+        val content = chat(s.aiBaseUrl, s.aiModel, key, systemPrompt(alarms, groups, now, timerGroups), transcript)
         parseResponse(content, alarms.map { it.id }.toSet(), groups.map { it.id }.toSet())
     }
 
@@ -107,7 +109,12 @@ object AiParser {
 
     // ---------- 提示詞 ----------
 
-    fun systemPrompt(alarms: List<AlarmEntity>, groups: List<AlarmGroupEntity>, now: LocalDateTime): String {
+    fun systemPrompt(
+        alarms: List<AlarmEntity>,
+        groups: List<AlarmGroupEntity>,
+        now: LocalDateTime,
+        timerGroups: List<TimerGroupEntity> = emptyList(),
+    ): String {
         val weekday = now.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.TRADITIONAL_CHINESE)
         val groupName = groups.associate { it.id to it.name }
         val alarmList = JSONArray().apply {
@@ -123,28 +130,40 @@ object AiParser {
                 )
             }
         }
-        val groupList = JSONArray().apply { groups.forEach { put(JSONObject().put("id", it.id).put("name", it.name)) } }
+        val groupList = JSONArray().apply {
+            groups.forEach { put(JSONObject().put("id", it.id).put("name", it.name).put("enabled", it.enabled)) }
+        }
+        val timerGroupList = JSONArray().apply { timerGroups.forEach { put(JSONObject().put("name", it.name)) } }
         return """
 你是鬧鐘 App 的指令解析器。把使用者的語音內容轉成 JSON。只輸出 JSON，不要輸出任何其他文字或 Markdown。
 
 現在時間：${"%04d-%02d-%02d %02d:%02d".format(now.year, now.monthValue, now.dayOfMonth, now.hour, now.minute)}（$weekday），時區 ${ZoneId.systemDefault().id}。
 現有鬧鐘：$alarmList
-現有群組：$groupList
+現有鬧鐘群組：$groupList
+現有計時器群組：$timerGroupList
 
 輸出格式：
 {"actions": [動作…], "question": null, "error": null}
 
 動作種類：
-1. 新增鬧鐘 {"type":"create_alarm","hour":7,"minute":15,"days":[1,3,5],"date":null,"memo":"晨跑","group_id":null}
+1. 新增鬧鐘 {"type":"create_alarm","hour":7,"minute":15,"days":[1,3,5],"date":null,"memo":"晨跑","group_id":null,"group_name":null}
    - days：1=週一 … 7=週日。每天＝[1,2,3,4,5,6,7]，平日＝[1,2,3,4,5]，週末＝[6,7]。
    - 只響一次時 days 為 []；若指定了日期（明天、後天、10/20）填 date（格式 YYYY-MM-DD），否則 date 為 null（代表下一次到這個時間就響）。
-   - group_id：使用者指定群組時，填現有群組的 id，否則 null。
-2. 開始計時 {"type":"create_timer","seconds":1500,"memo":"起來走動"}
+   - 放進現有群組：填 group_id。放進不存在的新群組：group_id 為 null、group_name 填新群組名稱（App 會自動建立）。沒指定群組兩者都是 null。
+2. 開始計時 {"type":"create_timer","seconds":1500,"memo":"起來走動","group_name":null}
+   - 指定計時器群組時 group_name 填群組名稱（不存在會自動建立），否則 null。
 3. 修改鬧鐘 {"type":"update_alarm","id":3,"hour":6,"minute":30,"days":[1,3,5],"memo":"晨跑","enabled":true}
    - id 必須來自「現有鬧鐘」；只填要改的欄位，不改的欄位不要出現。
+4. 建立群組 {"type":"create_group","name":"上班","for":"alarm"}
+   - for："alarm"＝鬧鐘群組（預設），"timer"＝計時器群組。同名群組已存在時不要再建立。
+   - 例：「新增鬧鐘群組叫上班，裡面加平日七點」→ create_group（上班）＋ create_alarm（group_name:"上班"）。
+5. 移動鬧鐘到群組 {"type":"move_alarms","ids":[3,5],"group_id":2,"group_name":null}
+   - ids 必須來自「現有鬧鐘」；移到新群組時 group_id 為 null 並填 group_name；移出群組（未分組）時兩者都是 null。
+6. 開關鬧鐘群組 {"type":"set_group","group_id":2,"enabled":false}
+   - group_id 必須來自「現有鬧鐘群組」。「關閉／暫停上班群組」→ enabled:false；「打開／恢復」→ enabled:true。
 
 規則：
-- memo 只放提醒內容，去掉「叫我」「提醒我」「記得」等字；沒有內容就給空字串。
+- memo 只放提醒內容，去掉「叫我」「提醒我」「記得」等字，也不要包含群組名稱；沒有內容就給空字串。
 - 一句話要求多個鬧鐘時，actions 放多個動作。
 - 時間有兩種以上合理解讀時（例如凌晨說「明天早上」可能指今天天亮後），不要猜，改用 question：
   {"actions":[],"question":{"text":"要問使用者的話","options":[{"label":"選項文字","actions":[動作…]}]},"error":null}
@@ -204,12 +223,33 @@ object AiParser {
                 memo = o.optNullableString("memo").orEmpty().take(60),
                 notBeforeDate = o.optNullableString("date")?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
                 groupId = o.optLong("group_id", -1).takeIf { it in groupIds },
+                groupName = o.optNullableString("group_name")?.trim()?.take(20)
+                    .takeIf { o.optLong("group_id", -1) !in groupIds },
             )
         }
         "create_timer" -> {
             val sec = o.optLong("seconds", 0)
             if (sec <= 0 || sec > 99 * 3600) null
-            else VoiceIntent.Timer(sec * 1000, o.optNullableString("memo").orEmpty().take(60))
+            else VoiceIntent.Timer(
+                sec * 1000, o.optNullableString("memo").orEmpty().take(60),
+                groupName = o.optNullableString("group_name")?.trim()?.take(20),
+            )
+        }
+        "create_group" -> o.optNullableString("name")?.trim()?.take(20)?.let {
+            VoiceIntent.CreateGroup(it, forTimer = o.optString("for") == "timer")
+        }
+        "move_alarms" -> {
+            val arr = o.optJSONArray("ids") ?: JSONArray()
+            val ids = (0 until arr.length()).map { arr.optLong(it, -1) }.filter { it in alarmIds }.distinct()
+            if (ids.isEmpty()) null
+            else {
+                val gid = o.optLong("group_id", -1).takeIf { it in groupIds }
+                VoiceIntent.MoveAlarms(ids, gid, if (gid == null) o.optNullableString("group_name")?.trim()?.take(20) else null)
+            }
+        }
+        "set_group" -> {
+            val gid = o.optLong("group_id", -1)
+            if (gid !in groupIds || !o.has("enabled")) null else VoiceIntent.GroupSwitch(gid, o.optBoolean("enabled"))
         }
         "update_alarm" -> {
             val id = o.optLong("id", -1)

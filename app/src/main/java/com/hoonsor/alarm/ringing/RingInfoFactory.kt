@@ -19,8 +19,10 @@ object RingInfoFactory {
         imagePath = a.imagePath ?: Graph.settings.defaultImagePath,
         soundUri = a.soundUri ?: Graph.settings.alarmSoundUri,
         volume = a.volume,
-        vibrate = a.vibrate,
-        speakText = if (a.speakMemo) TtsEngine.speechText(a).takeIf { it.isNotBlank() } else null,
+        // 純震動鬧鐘一定要震動，否則等於沒有提醒
+        vibrate = a.vibrate || a.silent,
+        silent = a.silent,
+        speakText = if (a.speakMemo && !a.silent) TtsEngine.speechText(a).takeIf { it.isNotBlank() } else null,
         speakFile = TtsEngine.validCache(a),
         speakOnce = a.speakOnceThenRing,
         isTest = isTest,

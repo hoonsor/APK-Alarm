@@ -88,6 +88,12 @@ interface TimerDao {
     @Query("SELECT * FROM timers WHERE id = :id")
     suspend fun get(id: Long): TimerEntity?
 
+    @Query("SELECT * FROM timers WHERE groupId = :groupId")
+    suspend fun getByGroup(groupId: Long): List<TimerEntity>
+
+    @Query("UPDATE timers SET groupId = NULL WHERE groupId = :groupId")
+    suspend fun ungroup(groupId: Long)
+
     @Insert
     suspend fun insert(timer: TimerEntity): Long
 
@@ -106,9 +112,33 @@ class Converters {
     fun toState(s: String): TimerState = runCatching { TimerState.valueOf(s) }.getOrDefault(TimerState.PAUSED)
 }
 
+@Dao
+interface TimerGroupDao {
+    @Query("SELECT * FROM timer_groups ORDER BY sortOrder, createdAt, id")
+    fun observeAll(): Flow<List<TimerGroupEntity>>
+
+    @Query("SELECT * FROM timer_groups ORDER BY sortOrder, createdAt, id")
+    suspend fun getAll(): List<TimerGroupEntity>
+
+    @Query("SELECT * FROM timer_groups WHERE id = :id")
+    suspend fun get(id: Long): TimerGroupEntity?
+
+    @Query("SELECT COALESCE(MAX(sortOrder), 0) FROM timer_groups")
+    suspend fun maxSortOrder(): Int
+
+    @Insert
+    suspend fun insert(group: TimerGroupEntity): Long
+
+    @Update
+    suspend fun update(group: TimerGroupEntity)
+
+    @Query("DELETE FROM timer_groups WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
 @Database(
-    entities = [AlarmEntity::class, TimerEntity::class, AlarmGroupEntity::class],
-    version = 4,
+    entities = [AlarmEntity::class, TimerEntity::class, AlarmGroupEntity::class, TimerGroupEntity::class],
+    version = 5,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -116,6 +146,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun alarmDao(): AlarmDao
     abstract fun timerDao(): TimerDao
     abstract fun groupDao(): GroupDao
+    abstract fun timerGroupDao(): TimerGroupDao
 
     companion object {
         /** v0.1 → v0.2：新增群組資料表、鬧鐘加上群組與鈴聲欄位。既有鬧鐘全部保留。 */
@@ -153,9 +184,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v0.5 → v0.6：純震動鬧鐘、計時器群組 */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `alarms` ADD COLUMN `silent` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `timers` ADD COLUMN `groupId` INTEGER")
+                db.execSQL("ALTER TABLE `timers` ADD COLUMN `pausedByGroup` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `timer_groups` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`name` TEXT NOT NULL, " +
+                        "`enabled` INTEGER NOT NULL, " +
+                        "`expanded` INTEGER NOT NULL, " +
+                        "`sortOrder` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL)",
+                )
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "alarm.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
     }
 }

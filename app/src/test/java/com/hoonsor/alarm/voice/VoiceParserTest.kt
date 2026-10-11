@@ -54,4 +54,37 @@ class VoiceParserTest {
         assertEquals(2, VoiceParser.cn("兩"))
         assertEquals(120, VoiceParser.cn("一百二十"))
     }
+
+    @Test fun createGroupNamed() {
+        val r = VoiceParser.parse("新增鬧鐘群組叫上班", friEvening) as VoiceIntent.CreateGroup
+        assertEquals("上班", r.name)
+    }
+
+    @Test fun createGroupWithAlarm() {
+        val r = VoiceParser.parse("新增一個群組叫家事，每天早上八點提醒我倒垃圾", friEvening) as VoiceIntent.Batch
+        assertTrue(r.actions[0] is VoiceIntent.CreateGroup)
+        val a = r.actions[1] as VoiceIntent.Alarm
+        assertEquals("家事", a.groupName)
+        assertEquals("倒垃圾", a.memo)
+        assertEquals(8, a.hour)
+    }
+
+    @Test fun alarmIntoGroup() {
+        val r = VoiceParser.parse("平日七點叫我出門放到上班群組", friEvening) as VoiceIntent.Alarm
+        assertEquals("上班", r.groupName)
+        assertEquals("出門", r.memo)
+    }
+
+    @Test fun timerGroup() {
+        val c = VoiceParser.parse("新增計時器群組叫煮飯", friEvening) as VoiceIntent.CreateGroup
+        assertTrue(c.forTimer)
+        val t = VoiceParser.parse("十分鐘後提醒我關火放到煮飯群組", friEvening) as VoiceIntent.Timer
+        assertEquals("煮飯", t.groupName)
+    }
+
+    @Test fun groupSwitch() {
+        val r = VoiceParser.parse("關閉上班群組", friEvening, listOf(1L to "上班")) as VoiceIntent.GroupSwitch
+        assertEquals(1L, r.groupId)
+        assertEquals(false, r.enabled)
+    }
 }

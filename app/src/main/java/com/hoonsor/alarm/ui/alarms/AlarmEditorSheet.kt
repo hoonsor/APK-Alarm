@@ -165,10 +165,16 @@ fun AlarmEditorSheet(
 
             Section("響鈴方式") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    GroupChip("鈴聲", !alarm.speakMemo) { vm.setSpeak(alarm.id, false) }
-                    GroupChip("語音念出提醒", alarm.speakMemo) { vm.setSpeak(alarm.id, true) }
+                    GroupChip("鈴聲", !alarm.speakMemo && !alarm.silent) { vm.setSpeak(alarm.id, false) }
+                    GroupChip("語音念出提醒", alarm.speakMemo && !alarm.silent) { vm.setSpeak(alarm.id, true) }
+                    GroupChip("僅震動", alarm.silent) { vm.setSilent(alarm.id) }
                 }
-                if (alarm.speakMemo) {
+                if (alarm.silent) {
+                    Text(
+                        "響鈴時只震動、不發出任何聲音，也不會打斷正在播放的音樂；畫面照常亮起，10 分鐘沒處理會留下錯過通知。",
+                        color = C.muted, fontSize = 12.sp, lineHeight = 18.sp,
+                    )
+                } else if (alarm.speakMemo) {
                     val engineName = if (Graph.settings.ttsEngine == TtsEngine.ENGINE_MINIMAX) "MiniMax 雲端語音" else "手機內建語音"
                     val cached = TtsEngine.validCache(alarm) != null
                     val status = when {
@@ -214,6 +220,9 @@ fun AlarmEditorSheet(
             }
 
             Section("音量與震動") {
+                if (alarm.silent) {
+                    Text("純震動鬧鐘一定會震動，不使用音量設定", color = C.muted, fontSize = 13.sp)
+                } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("震動", color = C.textSoft, fontSize = 15.sp, modifier = Modifier.weight(1f))
                     MiniSwitch(alarm.vibrate, { vm.setVibrate(alarm.id, !alarm.vibrate) }, contentDescription = "震動")
@@ -237,6 +246,7 @@ fun AlarmEditorSheet(
                         )
                     }
                     Text("響鈴時暫時調整手機的鬧鐘音量，結束後自動還原", color = C.dim, fontSize = 12.sp)
+                }
                 }
             }
 

@@ -117,24 +117,27 @@ class RingingService : Service() {
             acquire(TIMEOUT_MS + 60_000)
         }
 
-        val am = getSystemService(AudioManager::class.java)
-        focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-            .setAudioAttributes(alarmAttrs)
-            .build()
-            .also { am.requestAudioFocus(it) }
+        // 純震動：不搶音訊焦點（不會打斷正在播的音樂）、不調音量、不播任何聲音
+        if (!info.silent) {
+            val am = getSystemService(AudioManager::class.java)
+            focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                .setAudioAttributes(alarmAttrs)
+                .build()
+                .also { am.requestAudioFocus(it) }
 
-        applyAlarmVolume(info.volume)
-        volume = if (Graph.settings.rampSeconds <= 0) 1f else 0.15f
+            applyAlarmVolume(info.volume)
+            volume = if (Graph.settings.rampSeconds <= 0) 1f else 0.15f
 
-        val speakText = info.speakText
-        when {
-            info.speakFile != null && File(info.speakFile).exists() && startSpeechFile(info, info.speakFile) -> Unit
-            speakText != null -> startSystemTts(info, speakText)
-            else -> startRingtone(info)
+            val speakText = info.speakText
+            when {
+                info.speakFile != null && File(info.speakFile).exists() && startSpeechFile(info, info.speakFile) -> Unit
+                speakText != null -> startSystemTts(info, speakText)
+                else -> startRingtone(info)
+            }
+            handler.post(rampStep)
         }
-        handler.post(rampStep)
 
-        if (info.vibrate) {
+        if (info.vibrate || info.silent) {
             vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 getSystemService(VibratorManager::class.java).defaultVibrator
             } else {
