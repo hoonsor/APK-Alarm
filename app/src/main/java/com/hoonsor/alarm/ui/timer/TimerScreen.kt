@@ -171,7 +171,7 @@ fun TimerScreen(selection: TimerSelection, onVoice: () -> Unit) {
                 IconButton(onClick = { selection.exit() }) { GlyphIcon(Glyph.Close, "結束選取", tint = C.text) }
                 Column(Modifier.weight(1f)) {
                     Text("已選取 ${selection.ids.size} 個計時器", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = C.text)
-                    Text("用下方按鈕分組、暫停、繼續或刪除", fontSize = 12.sp, color = C.muted)
+                    Text("用下方按鈕分組、暫停、繼續、重設或刪除", fontSize = 12.sp, color = C.muted)
                 }
                 val all = selection.ids.size == timers.size && timers.isNotEmpty()
                 OutlinedButton(
@@ -391,6 +391,9 @@ fun TimerSelectionBar(selection: TimerSelection) {
         }
         BarAction(Glyph.Play, "繼續", C.textSoft, enabled, Modifier.weight(1f)) {
             scope.launch { repo.resumeTimers(ids); selection.exit() }
+        }
+        BarAction(Glyph.Reset, "全部重設", C.textSoft, enabled, Modifier.weight(1f)) {
+            scope.launch { repo.resetTimers(ids); selection.exit() }
         }
         BarAction(Glyph.Trash, "刪除", C.danger, enabled, Modifier.weight(1f)) { confirmDelete = true }
     }
@@ -688,10 +691,13 @@ private fun TimerCard(
                 when {
                     running -> RoundBtn(Glyph.Pause, "暫停", filled = true, onClick = onPause)
                     done -> RoundBtn(Glyph.Reset, "重設", filled = true, onClick = onReset)
-                    else -> RoundBtn(Glyph.Play, "繼續", filled = true, onClick = onResume)
+                    else -> RoundBtn(Glyph.Play, if (remaining < t.durationMs) "繼續" else "開始", filled = true, onClick = onResume)
                 }
-                if (running) RoundBtn(Glyph.Reset, "重設", filled = false, onClick = onReset)
-                else RoundBtn(Glyph.Trash, "刪除", filled = false, onClick = onDelete, tint = C.danger)
+                // 停止＝停下並回到完整時長（執行中，或暫停在中途時才需要）
+                if (!done && (running || remaining < t.durationMs - 999)) {
+                    RoundBtn(Glyph.Stop, "停止", filled = false, onClick = onReset)
+                }
+                RoundBtn(Glyph.Trash, "刪除", filled = false, onClick = onDelete, tint = C.danger)
             }
         }
     }

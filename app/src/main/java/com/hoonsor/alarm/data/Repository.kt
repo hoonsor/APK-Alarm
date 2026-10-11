@@ -229,6 +229,16 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
 
     suspend fun resumeTimers(ids: Collection<Long>) = ids.forEach { resumeTimer(it) }
 
+    /** 全部重設：停止並回到完整時長 */
+    suspend fun resetTimers(ids: Collection<Long>) {
+        ids.forEach { id ->
+            timers.get(id)?.let { t ->
+                timers.update(t.copy(state = TimerState.PAUSED, remainingMs = t.durationMs, endAtWall = null, endAtElapsed = null, pausedByGroup = false))
+            }
+        }
+        scheduler.rescheduleAll("重設計時")
+    }
+
     suspend fun renameTimerGroup(id: Long, name: String) {
         val g = timerGroups.get(id) ?: return
         timerGroups.update(g.copy(name = name.trim().ifBlank { g.name }))
