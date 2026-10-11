@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 以下的 Google 自動備份：只備份鬧鐘資料庫、設定、響鈴圖片與自訂鈴聲（語音快取會自動重新產生，不備份） -->
+<full-backup-content>
+    <include domain="database" path="." />
+    <include domain="sharedpref" path="settings.xml" />
+    <include domain="file" path="images/" />
+    <include domain="file" path="sounds/" />
+</full-backup-content>

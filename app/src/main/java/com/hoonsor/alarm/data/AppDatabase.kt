@@ -48,6 +48,9 @@ interface AlarmDao {
     @Query("UPDATE alarms SET groupId = NULL WHERE groupId = :groupId")
     suspend fun ungroup(groupId: Long)
 
+    @Query("DELETE FROM alarms")
+    suspend fun deleteAll()
+
     /** 只更新語音快取欄位，避免覆蓋使用者同時進行的編輯 */
     @Query("UPDATE alarms SET ttsCachePath = :path, ttsCacheKey = :key WHERE id = :id")
     suspend fun setTtsCache(id: Long, path: String?, key: String?)
@@ -73,6 +76,9 @@ interface GroupDao {
     @Update
     suspend fun update(group: AlarmGroupEntity)
 
+    @Query("DELETE FROM alarm_groups")
+    suspend fun deleteAll()
+
     @Query("DELETE FROM alarm_groups WHERE id = :id")
     suspend fun delete(id: Long)
 }
@@ -93,6 +99,9 @@ interface TimerDao {
 
     @Query("UPDATE timers SET groupId = NULL WHERE groupId = :groupId")
     suspend fun ungroup(groupId: Long)
+
+    @Query("DELETE FROM timers")
+    suspend fun deleteAll()
 
     @Insert
     suspend fun insert(timer: TimerEntity): Long
@@ -131,6 +140,9 @@ interface TimerGroupDao {
 
     @Update
     suspend fun update(group: TimerGroupEntity)
+
+    @Query("DELETE FROM timer_groups")
+    suspend fun deleteAll()
 
     @Query("DELETE FROM timer_groups WHERE id = :id")
     suspend fun delete(id: Long)

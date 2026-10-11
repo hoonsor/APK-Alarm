@@ -180,6 +180,8 @@ fun SettingsScreen(onBack: () -> Unit) {
             TtsCard()
 
             AiCard()
+
+            BackupCard()
             Spacer(Modifier.height(24.dp))
         }
     }

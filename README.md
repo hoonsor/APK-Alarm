@@ -19,6 +19,8 @@
 - **響鈴可靠度檢查**：檢查精準鬧鐘、全螢幕響鈴、通知、電池最佳化、鬧鐘音量，並比對「App 預期」與「系統實際登記」的下一次響鈴。
 - **支援標準 Intent**：Google 助理或你自己的自動化工具可用 `ACTION_SET_ALARM`、`ACTION_SET_TIMER` 直接在本 App 建立鬧鐘與計時器。
 
+- **備份與還原**：鬧鐘、群組、計時器與設定可匯出成一個檔案（可選擇是否包含圖片與鈴聲），存檔時能直接存到 Google 雲端硬碟或 Dropbox；匯入可選「合併」或「取代」。另有每天自動備份（存到手機「下載/HoonsorAlarm」，可同時上傳 Dropbox 或 Google 雲端硬碟，保留最近幾份），以及 Android 系統的 Google 帳號備份，重新安裝或換手機時自動還原。
+
 ## 為什麼比一般鬧鐘可靠
 
 1. 所有提醒（含計時器）都用系統優先權最高的 `setAlarmClock()` 排程。
@@ -37,6 +39,39 @@
 
 單元測試：`./gradlew test`（涵蓋下次響鈴計算與語音解析）。
 
+## 雲端自動備份設定
+
+這是自用 App，沒有上架，所以 Dropbox 與 Google 雲端硬碟的「App 身分」要自己建立一次。只用手機本機備份或手動匯出的話，不需要做這些。
+
+### Dropbox（約 5 分鐘）
+
+1. 用電腦打開 <https://www.dropbox.com/developers/apps>，按 **Create app**。
+2. 選 **Scoped access** → **App folder**，名稱隨意（例如 `HoonsorAlarm-倬`），按 Create。
+3. 到 **Permissions** 分頁，勾選 `files.metadata.read`、`files.content.write`、`files.content.read`，按最下方 **Submit**。
+4. 回到 **Settings** 分頁，複製 **App key**（不需要 App secret，也不需要填 Redirect URI）。
+5. 在手機 App：設定 →「備份與還原」→ Dropbox，貼上 App key →「1. 開啟 Dropbox 登入」→ 在瀏覽器登入並按「允許」→ 複製畫面上顯示的代碼 → 回到 App 貼上 →「3. 完成連結」。
+6. 備份會放在 Dropbox 的「應用程式/你的 App 名稱」資料夾。
+
+> 一定要先做第 3 步再登入；先登入再改權限的話，要解除連結後重新連結一次。
+
+### Google 雲端硬碟（約 15 分鐘）
+
+1. 打開 <https://console.cloud.google.com/>，建立新專案（例如 `HoonsorAlarm`）。
+2. 「API 和服務」→「程式庫」，搜尋 **Google Drive API** → 啟用。
+3. 「Google Auth Platform」（或「OAuth 同意畫面」）：
+   - 使用者類型選 **外部**，填 App 名稱與你的 Email。
+   - 權限範圍加入 `.../auth/drive.file`（只能存取本 App 自己建立的檔案）。
+   - **發布狀態改成「正式版（In production）」**。`drive.file` 屬於非敏感權限，不需要 Google 審核；維持「測試中」的話，授權大約 7 天就會失效，自動備份會失敗。
+4. 「用戶端（Credentials）」→ 建立 OAuth 用戶端 ID → 類型選 **Android**：
+   - 套件名稱：`com.hoonsor.alarm`
+   - SHA-1：在 Android Studio 右側 Gradle 面板執行 `app › Tasks › android › signingReport`，複製 `Variant: debug` 下的 **SHA1**。
+     或在命令提示字元執行：
+     `keytool -list -v -keystore "%USERPROFILE%\.android\debug.keystore" -alias androiddebugkey -storepass android`
+5. 在手機 App：設定 →「備份與還原」→「連結 Google 雲端硬碟」→ 選帳號並允許。
+6. 備份會放在雲端硬碟根目錄的「HoonsorAlarm 備份」資料夾。
+
+> **兩台電腦都會編譯安裝時**：每台電腦的 debug 簽章不同，SHA-1 也不同。要在第 4 步為每台電腦各建一個 Android 用戶端（套件名稱相同、SHA-1 不同）。另外，用另一台電腦編譯的版本裝到手機上時，Android 會因為簽章不同而拒絕覆蓋安裝；要先解除安裝舊版（記得先匯出備份），或讓兩台電腦共用同一個 debug.keystore。
+
 ## 專案結構
 
 ```
@@ -48,6 +83,7 @@ app/src/main/java/com/hoonsor/alarm/
 ├── ringing/               響鈴前景服務、通知、響鈴畫面（圖片＋暗角）
 ├── image/ImageStore.kt    響鈴圖片匯入（複製壓縮到 App 內部）
 ├── sound/SoundStore.kt    鈴聲匯入、名稱、試聽
+├── backup/                匯出匯入、每日自動備份、Dropbox 與 Google 雲端硬碟
 ├── tts/TtsEngine.kt       語音播報（念出文字、MiniMax 預先產生與快取）
 ├── voice/                 語音辨識畫面、AI 解析（AiParser）與離線規則解析
 └── ui/                    鬧鐘、計時器、碼錶、可靠度、設定畫面
@@ -55,4 +91,4 @@ app/src/main/java/com/hoonsor/alarm/
 
 ## 版本
 
-目前 v0.7.2。進度與待辦見 [PROJECT_STATUS.md](PROJECT_STATUS.md)。
+目前 v0.8.0。進度與待辦見 [PROJECT_STATUS.md](PROJECT_STATUS.md)。

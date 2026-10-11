@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 以上：Google 雲端自動備份與換機時的裝置間傳輸 -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="database" path="." />
+        <include domain="sharedpref" path="settings.xml" />
+        <include domain="file" path="images/" />
+        <include domain="file" path="sounds/" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="database" path="." />
+        <include domain="sharedpref" path="settings.xml" />
+        <include domain="file" path="images/" />
+        <include domain="file" path="sounds/" />
+    </device-transfer>
+</data-extraction-rules>
