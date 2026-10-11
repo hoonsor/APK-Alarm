@@ -1,0 +1,79 @@
+package com.hoonsor.alarm.data
+
+import androidx.room.ColumnInfo
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+/**
+ * 鬧鐘。
+ * daysMask：bit0 = 週一 … bit6 = 週日；0 代表只響一次。
+ * notBefore：只響一次的鬧鐘若指定「明天」「後天」，下次響鈴不得早於此時間（epoch ms）。
+ * snoozeUntil：貪睡中的下一次響鈴時間（epoch ms），即使鬧鐘已停用仍有效。
+ * groupId：所屬群組；null 代表未分組。
+ * soundUri：個別指定的鈴聲；null 代表跟隨「鬧鐘預設鈴聲」。
+ * volume：響鈴音量 10–100（%）；null 代表使用手機目前的鬧鐘音量。
+ * vibrate：響鈴時是否震動。
+ * speakMemo：響鈴時用語音念出提醒，取代鈴聲。
+ * speakOnceThenRing：語音只念一次，之後改播鈴聲（避免一直重複念）。
+ * ttsCachePath / ttsCacheKey：雲端預先產生的語音檔與它對應的內容；內容不符時改用手機內建語音。
+ */
+@Entity(tableName = "alarms")
+data class AlarmEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val hour: Int,
+    val minute: Int,
+    val daysMask: Int = 0,
+    val enabled: Boolean = true,
+    val memo: String = "",
+    val imagePath: String? = null,
+    val notBefore: Long? = null,
+    val snoozeUntil: Long? = null,
+    val isCopy: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis(),
+    val groupId: Long? = null,
+    val soundUri: String? = null,
+    val volume: Int? = null,
+    @ColumnInfo(defaultValue = "1") val vibrate: Boolean = true,
+    @ColumnInfo(defaultValue = "0") val speakMemo: Boolean = false,
+    @ColumnInfo(defaultValue = "1") val speakOnceThenRing: Boolean = true,
+    val ttsCachePath: String? = null,
+    val ttsCacheKey: String? = null,
+)
+
+/**
+ * 鬧鐘群組。
+ * enabled = false 時，群組內所有鬧鐘暫停；重新開啟後，各鬧鐘恢復自己原本的開關狀態。
+ */
+@Entity(tableName = "alarm_groups")
+data class AlarmGroupEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val enabled: Boolean = true,
+    val expanded: Boolean = true,
+    val sortOrder: Int = 0,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+/**
+ * 倒數計時器。
+ * 執行中時以 endAtElapsed（同一次開機內最準確，不受改系統時間影響）為主，
+ * 重新開機後 elapsedRealtime 歸零，改用 endAtWall。
+ */
+@Entity(tableName = "timers")
+data class TimerEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val label: String = "",
+    val durationMs: Long,
+    val state: TimerState = TimerState.PAUSED,
+    val remainingMs: Long = durationMs,
+    val endAtWall: Long? = null,
+    val endAtElapsed: Long? = null,
+    val bootCount: Int? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+enum class TimerState { RUNNING, PAUSED, RINGING, DONE }
+
+/** 鬧鐘實際是否會響：自己開著，且所屬群組也開著 */
+fun AlarmEntity.isActive(groups: Map<Long, AlarmGroupEntity>): Boolean =
+    enabled && (groupId == null || groups[groupId]?.enabled != false)
