@@ -32,6 +32,8 @@ object C {
     val ok = Color(0xFF5BD69A)
     val fast = Color(0xFF6FE0C8)
     val switchOff = Color(0xFF2E3444)
+    /** 「略過下次」的卡片外框與標籤（洋紅色，和群組色、琥珀色選取框都分得開） */
+    val skip = Color(0xFFFF5FD2)
 }
 
 @Composable

@@ -54,12 +54,13 @@ object NextTrigger {
     fun nextRegular(alarm: AlarmEntity, nowMs: Long, zone: ZoneId = ZoneId.systemDefault()): Long? {
         val from = maxOf(nowMs, alarm.notBefore ?: Long.MIN_VALUE)
         val start = ZonedDateTime.ofInstant(Instant.ofEpochMilli(from), zone)
-        // 最多往後找 8 天，涵蓋「今天已過、下週同一天」的情況
-        for (offset in 0..8) {
+        // 最多往後找 15 天：涵蓋「今天已過、下週同一天」，以及每週一次的鬧鐘被「略過下次」後要跳到兩週後
+        val skip = alarm.skipUntil ?: Long.MIN_VALUE
+        for (offset in 0..15) {
             val day = start.toLocalDate().plusDays(offset.toLong())
             val candidate = ZonedDateTime.of(day, LocalTime.of(alarm.hour, alarm.minute), zone)
             val ms = candidate.toInstant().toEpochMilli()
-            if (ms <= nowMs || ms < from) continue
+            if (ms <= nowMs || ms < from || ms <= skip) continue
             if (alarm.daysMask == 0) return ms
             val index = candidate.dayOfWeek.value - 1
             if (Days.has(alarm.daysMask, index)) return ms

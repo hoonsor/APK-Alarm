@@ -29,7 +29,7 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
         if (next == current) return
         // 只要改了時間或重複設定，就清掉舊的貪睡與「不早於」限制
         val cleaned = if (next.hour != current.hour || next.minute != current.minute || next.daysMask != current.daysMask) {
-            next.copy(snoozeUntil = null, notBefore = if (next.daysMask != 0) null else next.notBefore)
+            next.copy(snoozeUntil = null, notBefore = if (next.daysMask != 0) null else next.notBefore, skipUntil = null)
         } else next
         alarms.update(cleaned)
         scheduler.rescheduleAll(reason)
@@ -53,7 +53,7 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
         val newIds = alarms.getMany(ids).map { src ->
             alarms.insert(
                 src.copy(
-                    id = 0, isCopy = true, snoozeUntil = null, createdAt = System.currentTimeMillis(),
+                    id = 0, isCopy = true, snoozeUntil = null, skipUntil = null, createdAt = System.currentTimeMillis(),
                     ttsCachePath = null, ttsCacheKey = null,
                 ),
             ).also { if (src.speakMemo) prepareTtsAsync(it) }
@@ -139,6 +139,26 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
         if (ids.isEmpty()) return
         alarms.setGroup(ids, groupId)
         scheduler.rescheduleAll("移動群組")
+    }
+
+    /**
+     * 略過下次：只略過「下一次」正常響鈴（例如平日鬧鐘週一響過後按，週二不響、週三照常），
+     * 進行中的貪睡一併取消。停用中的鬧鐘不受影響。
+     */
+    suspend fun skipNext(ids: List<Long>) {
+        val now = System.currentTimeMillis()
+        val groupMap = groups.getAll().associateBy { it.id }
+        alarms.getMany(ids).forEach { a ->
+            if (!a.isActive(groupMap)) return@forEach
+            val target = com.hoonsor.alarm.domain.NextTrigger.nextRegular(a.copy(skipUntil = null), now) ?: return@forEach
+            alarms.update(a.copy(skipUntil = target, snoozeUntil = null))
+        }
+        scheduler.rescheduleAll("略過下次")
+    }
+
+    suspend fun unskip(ids: List<Long>) {
+        alarms.getMany(ids).forEach { if (it.skipUntil != null) alarms.update(it.copy(skipUntil = null)) }
+        scheduler.rescheduleAll("取消略過")
     }
 
     suspend fun setEnabled(ids: List<Long>, enabled: Boolean) {

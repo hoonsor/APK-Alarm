@@ -16,6 +16,7 @@ import androidx.room.PrimaryKey
  * speakMemo：響鈴時用語音念出提醒，取代鈴聲。
  * speakOnceThenRing：語音只念一次，之後改播鈴聲（避免一直重複念）。
  * silent：純震動鬧鐘，不播放任何聲音（鈴聲與語音都不播）。
+ * skipUntil：「略過下次」—被略過的那一次響鈴時間（epoch ms）；這個時間（含）之前的響鈴都不排，之後恢復正常。
  * ttsCachePath / ttsCacheKey：雲端預先產生的語音檔與它對應的內容；內容不符時改用手機內建語音。
  */
 @Entity(tableName = "alarms")
@@ -38,6 +39,7 @@ data class AlarmEntity(
     @ColumnInfo(defaultValue = "0") val speakMemo: Boolean = false,
     @ColumnInfo(defaultValue = "1") val speakOnceThenRing: Boolean = true,
     @ColumnInfo(defaultValue = "0") val silent: Boolean = false,
+    val skipUntil: Long? = null,
     val ttsCachePath: String? = null,
     val ttsCacheKey: String? = null,
 )
@@ -110,6 +112,9 @@ fun nextGroupColor(used: List<Int>): Int =
     (0 until GROUP_COLOR_COUNT).minBy { c -> used.count { it == c } * GROUP_COLOR_COUNT + c }
 
 enum class TimerState { RUNNING, PAUSED, RINGING, DONE }
+
+/** 是否正在「略過下次」（被略過的那一次還沒過） */
+fun AlarmEntity.isSkipping(nowMs: Long): Boolean = skipUntil != null && skipUntil > nowMs
 
 /** 鬧鐘實際是否會響：自己開著，且所屬群組也開著 */
 fun AlarmEntity.isActive(groups: Map<Long, AlarmGroupEntity>): Boolean =

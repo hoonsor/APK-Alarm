@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
  */
 enum class Glyph(private val d: String, private val filled: Boolean = false) {
     Plus("M12 5v14M5 12h14"),
+    SkipNext("M5 5l10 7-10 7zM18 5v14"),
     Vibrate("M9 4h6a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM4 9v6M20 9v6M1.5 11v2M22.5 11v2"),
     Close("M18 6 6 18M6 6l12 12"),
     Check("M20 6 9 17l-5-5"),

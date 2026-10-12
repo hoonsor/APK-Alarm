@@ -1,5 +1,6 @@
 package com.hoonsor.alarm.ui.alarms
 
+import com.hoonsor.alarm.data.isSkipping
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -125,6 +126,25 @@ class AlarmsViewModel : ViewModel() {
         val picked = alarms.value.filter { it.id in selection }
         return picked.isNotEmpty() && picked.all { it.enabled }
     }
+
+    /** 選取的鬧鐘是否全部都已「略過下次」 */
+    fun selectionAllSkipping(): Boolean {
+        val now = System.currentTimeMillis()
+        val picked = alarms.value.filter { it.id in selection }
+        return picked.isNotEmpty() && picked.all { it.isSkipping(now) }
+    }
+
+    /** 批次：全部已略過 → 取消略過；否則全部略過下次 */
+    fun bulkSkip() {
+        val ids = selection.toList()
+        if (ids.isEmpty()) return
+        val undo = selectionAllSkipping()
+        exitSelect()
+        launch { if (undo) repo.unskip(ids) else repo.skipNext(ids) }
+    }
+
+    fun skipNext(id: Long) = launch { repo.skipNext(listOf(id)) }
+    fun unskip(id: Long) = launch { repo.unskip(listOf(id)) }
 
     fun bulkToggle() = launch {
         if (selection.isEmpty()) return@launch

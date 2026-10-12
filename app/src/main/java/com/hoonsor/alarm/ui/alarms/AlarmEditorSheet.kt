@@ -1,5 +1,7 @@
 package com.hoonsor.alarm.ui.alarms
 
+import com.hoonsor.alarm.domain.NextTrigger
+import com.hoonsor.alarm.data.isSkipping
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -288,6 +290,35 @@ fun AlarmEditorSheet(
                 }
             }
 
+            // 略過下次
+            run {
+                val now = System.currentTimeMillis()
+                val groupOn = alarm.groupId?.let { id -> groups.firstOrNull { it.id == id }?.enabled } ?: true
+                val skipping = alarm.isSkipping(now)
+                val target = if (skipping) alarm.skipUntil
+                else if (alarm.enabled && groupOn) NextTrigger.nextRegular(alarm, now) else null
+                if (target != null) {
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                            .background(if (skipping) C.skip.copy(alpha = 0.12f) else C.surfaceHi)
+                            .border(1.dp, C.skip.copy(alpha = if (skipping) 0.8f else 0.35f), RoundedCornerShape(14.dp))
+                            .clickable { if (skipping) vm.unskip(alarm.id) else vm.skipNext(alarm.id) }
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        GlyphIcon(Glyph.SkipNext, null, tint = C.skip, size = 18.dp)
+                        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                            Text(if (skipping) "已略過下次" else "略過下次", color = C.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                (if (skipping) "這次不響：" else "下一次：") + skipLabel(target) + if (skipping) "，之後照常" else "",
+                                color = C.muted, fontSize = 12.sp,
+                            )
+                        }
+                        Text(if (skipping) "取消略過" else "略過", color = C.skip, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = { vm.copyOne(alarm.id) },
@@ -382,4 +413,11 @@ private fun Section(title: String, content: @Composable () -> Unit) {
         Text(title, color = C.muted, fontSize = 12.sp, letterSpacing = 1.sp)
         content()
     }
+}
+
+/** 10/14（二）07:00 */
+private fun skipLabel(ms: Long): String {
+    val z = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault())
+    val wd = "一二三四五六日"[z.dayOfWeek.value - 1]
+    return "${z.monthValue}/${z.dayOfMonth}（$wd）%02d:%02d".format(z.hour, z.minute)
 }

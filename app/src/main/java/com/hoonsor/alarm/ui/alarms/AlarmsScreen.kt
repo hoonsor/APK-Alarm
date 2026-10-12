@@ -75,6 +75,7 @@ import com.hoonsor.alarm.ui.theme.C
 import com.hoonsor.alarm.ui.theme.GroupColors
 import com.hoonsor.alarm.ui.common.GroupColorDialog
 import com.hoonsor.alarm.data.color
+import com.hoonsor.alarm.data.isSkipping
 
 /** 卡片固定高度：不論內容多寡、是否為副本，每張卡一樣大 */
 private val TILE_HEIGHT = 112.dp
@@ -184,7 +185,7 @@ fun AlarmsScreen(
                                     )
                                 }
                             }
-                            tiles(list, vm, groupEnabled = g.enabled, drag = drag, onDrop = { onDrop(it) }, groupColor = g.color)
+                            tiles(list, vm, groupEnabled = g.enabled, drag = drag, onDrop = { onDrop(it) }, groupColor = g.color, now = now)
                         }
                     }
                     if (groups.isNotEmpty() && ungrouped.isNotEmpty()) {
@@ -196,7 +197,7 @@ fun AlarmsScreen(
                             )
                         }
                     }
-                    tiles(ungrouped, vm, groupEnabled = true, drag = drag, onDrop = { onDrop(it) })
+                    tiles(ungrouped, vm, groupEnabled = true, drag = drag, onDrop = { onDrop(it) }, now = now)
                     if (!vm.selecting) {
                         fullRow("add_group") {
                             Row(
@@ -279,12 +280,14 @@ private fun LazyGridScope.tiles(
     drag: GroupDragController,
     onDrop: (DropTarget?) -> Unit,
     groupColor: Int? = null,
+    now: Long = System.currentTimeMillis(),
 ) {
     items(list, key = { it.id }) { a ->
         AlarmTile(
             alarm = a,
             groupEnabled = groupEnabled,
             groupColor = groupColor,
+            skipping = groupEnabled && a.enabled && a.isSkipping(now),
             selecting = vm.selecting,
             selected = a.id in vm.selection,
             open = vm.editingId == a.id,
@@ -397,6 +400,7 @@ private fun AlarmTile(
     alarm: AlarmEntity,
     groupEnabled: Boolean,
     groupColor: Int?,
+    skipping: Boolean,
     selecting: Boolean,
     selected: Boolean,
     open: Boolean,
@@ -441,7 +445,16 @@ private fun AlarmTile(
             .alpha(if (dragging) 0.3f else 1f)
             .clip(shape).background(bg)
             .then(if (groupColor != null && !selected) Modifier.background(GroupColors.tile(groupColor)) else Modifier)
-            .border(if (selected) 2.dp else 1.dp, if (groupColor != null && !selected && !open) GroupColors.of(groupColor).copy(alpha = 0.28f) else borderColor, shape)
+            .border(
+                if (selected || skipping) 2.dp else 1.dp,
+                when {
+                    selected -> borderColor
+                    skipping -> C.skip
+                    groupColor != null && !open -> GroupColors.of(groupColor).copy(alpha = 0.28f)
+                    else -> borderColor
+                },
+                shape,
+            )
             .semantics { contentDescription = "${Fmt.hm(alarm.hour, alarm.minute)} 鬧鐘，${Days.summary(alarm.daysMask)}" }
             .then(gesture),
     ) {
@@ -480,6 +493,7 @@ private fun AlarmTile(
             // 提醒列：標籤 + 一行提醒文字，超過以「…」省略
             Row(Modifier.fillMaxWidth().clipToBounds(), verticalAlignment = Alignment.CenterVertically) {
                 if (alarm.snoozeUntil != null) Badge("貪睡", C.accentSoft)
+                if (skipping) Badge("略過下次", C.skip)
                 if (alarm.isCopy) Badge("副本", C.textSoft)
                 Text(
                     alarm.memo.ifBlank { "尚未設定提醒" },
@@ -528,6 +542,8 @@ fun AlarmSelectionBar(vm: AlarmsViewModel, onDelete: () -> Unit) {
         BarAction(Glyph.Copy, "複製", C.textSoft, enabled, Modifier.weight(1f)) { vm.bulkCopy() }
         BarAction(Glyph.Folder, "群組", C.textSoft, enabled, Modifier.weight(1f)) { chooseGroup = true }
         BarAction(Glyph.Power, if (allOn) "停用" else "啟用", C.textSoft, enabled, Modifier.weight(1f)) { vm.bulkToggle() }
+        val allSkip = vm.selectionAllSkipping()
+        BarAction(Glyph.SkipNext, if (allSkip) "取消略過" else "略過下次", C.skip, enabled, Modifier.weight(1f)) { vm.bulkSkip() }
         BarAction(Glyph.Trash, "刪除", C.danger, enabled, Modifier.weight(1f), onDelete)
     }
 
