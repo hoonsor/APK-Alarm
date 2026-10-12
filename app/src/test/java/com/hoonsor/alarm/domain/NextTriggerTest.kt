@@ -77,4 +77,11 @@ class NextTriggerTest {
         assertEquals(next, NextTrigger.forAlarm(a, mon, zone))
         assertEquals(ms(2026, 10, 26, 7, 0), NextTrigger.forAlarm(a.copy(skipUntil = next), mon, zone))
     }
+
+    @Test fun oneShotIgnoresSkip() {
+        val now = ms(2026, 10, 12, 6, 0)
+        val today = ms(2026, 10, 12, 7, 0)
+        val a = AlarmEntity(hour = 7, minute = 0, skipUntil = today)
+        assertEquals(today, NextTrigger.forAlarm(a, now, zone))
+    }
 }

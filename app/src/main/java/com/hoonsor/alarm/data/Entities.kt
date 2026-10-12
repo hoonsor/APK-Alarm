@@ -114,7 +114,7 @@ fun nextGroupColor(used: List<Int>): Int =
 enum class TimerState { RUNNING, PAUSED, RINGING, DONE }
 
 /** 是否正在「略過下次」（被略過的那一次還沒過） */
-fun AlarmEntity.isSkipping(nowMs: Long): Boolean = skipUntil != null && skipUntil > nowMs
+fun AlarmEntity.isSkipping(nowMs: Long): Boolean = daysMask != 0 && skipUntil != null && skipUntil > nowMs
 
 /** 鬧鐘實際是否會響：自己開著，且所屬群組也開著 */
 fun AlarmEntity.isActive(groups: Map<Long, AlarmGroupEntity>): Boolean =

@@ -297,7 +297,9 @@ fun AlarmEditorSheet(
                 val skipping = alarm.isSkipping(now)
                 val target = if (skipping) alarm.skipUntil
                 else if (alarm.enabled && groupOn) NextTrigger.nextRegular(alarm, now) else null
-                if (target != null) {
+                if (alarm.daysMask == 0) {
+                    Text("只響一次的鬧鐘無法使用「略過下次」，不需要時請直接關閉。", color = C.dim, fontSize = 12.sp, lineHeight = 18.sp)
+                } else if (target != null) {
                     Row(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
                             .background(if (skipping) C.skip.copy(alpha = 0.12f) else C.surfaceHi)

@@ -543,7 +543,7 @@ fun AlarmSelectionBar(vm: AlarmsViewModel, onDelete: () -> Unit) {
         BarAction(Glyph.Folder, "群組", C.textSoft, enabled, Modifier.weight(1f)) { chooseGroup = true }
         BarAction(Glyph.Power, if (allOn) "停用" else "啟用", C.textSoft, enabled, Modifier.weight(1f)) { vm.bulkToggle() }
         val allSkip = vm.selectionAllSkipping()
-        BarAction(Glyph.SkipNext, if (allSkip) "取消略過" else "略過下次", C.skip, enabled, Modifier.weight(1f)) { vm.bulkSkip() }
+        BarAction(Glyph.SkipNext, if (allSkip) "取消略過" else "略過下次", C.skip, enabled && vm.selectionCanSkip(), Modifier.weight(1f)) { vm.bulkSkip() }
         BarAction(Glyph.Trash, "刪除", C.danger, enabled, Modifier.weight(1f), onDelete)
     }
 

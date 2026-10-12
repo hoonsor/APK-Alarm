@@ -143,13 +143,13 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
 
     /**
      * 略過下次：只略過「下一次」正常響鈴（例如平日鬧鐘週一響過後按，週二不響、週三照常），
-     * 進行中的貪睡一併取消。停用中的鬧鐘不受影響。
+     * 進行中的貪睡一併取消。停用中的鬧鐘與只響一次的鬧鐘不受影響（只響一次的鬧鐘不能略過）。
      */
     suspend fun skipNext(ids: List<Long>) {
         val now = System.currentTimeMillis()
         val groupMap = groups.getAll().associateBy { it.id }
         alarms.getMany(ids).forEach { a ->
-            if (!a.isActive(groupMap)) return@forEach
+            if (!a.isActive(groupMap) || a.daysMask == 0) return@forEach
             val target = com.hoonsor.alarm.domain.NextTrigger.nextRegular(a.copy(skipUntil = null), now) ?: return@forEach
             alarms.update(a.copy(skipUntil = target, snoozeUntil = null))
         }

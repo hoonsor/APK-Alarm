@@ -128,9 +128,12 @@ class AlarmsViewModel : ViewModel() {
     }
 
     /** 選取的鬧鐘是否全部都已「略過下次」 */
+    /** 選取中有沒有可以略過的鬧鐘（只響一次的不能略過） */
+    fun selectionCanSkip(): Boolean = alarms.value.any { it.id in selection && it.daysMask != 0 }
+
     fun selectionAllSkipping(): Boolean {
         val now = System.currentTimeMillis()
-        val picked = alarms.value.filter { it.id in selection }
+        val picked = alarms.value.filter { it.id in selection && it.daysMask != 0 }
         return picked.isNotEmpty() && picked.all { it.isSkipping(now) }
     }
 
