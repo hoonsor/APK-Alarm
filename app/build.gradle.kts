@@ -13,8 +13,8 @@ android {
         applicationId = "com.hoonsor.alarm"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "0.10.1"
+        versionCode = 14
+        versionName = "0.10.2"
     }
 
     buildTypes {

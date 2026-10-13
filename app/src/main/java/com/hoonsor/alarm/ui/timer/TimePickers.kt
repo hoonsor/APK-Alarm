@@ -173,15 +173,19 @@ fun AddTimeRow(ms: Long, onChange: (Long) -> Unit) {
     }
 }
 
-/** 「現在開始的話 14:35:20 響」，每秒更新 */
+/**
+ * 響鈴時刻提示。
+ * fixedAt = null：「現在開始的話 14:35:20 響」，以現在時間＋時長計算（還沒開始的計時器，晚按開始就晚響，所以會跟著時間走）。
+ * fixedAt ≠ null：執行中的計時器，直接顯示固定的響鈴時刻，不會隨畫面停留時間漂移。
+ */
 @Composable
-fun RingAtLine(ms: Long, prefix: String = "現在開始的話") {
+fun RingAtLine(ms: Long, prefix: String = "現在開始的話", fixedAt: Long? = null) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(500) } }
     Row(verticalAlignment = Alignment.CenterVertically) {
         GlyphIcon(Glyph.Bell, null, tint = C.accentSoft, size = 14.dp)
         Text(
-            if (ms > 0) "  $prefix ${ringAt(now + ms, now)} 響鈴" else "  請設定時間",
+            if (ms > 0) "  $prefix ${ringAt(fixedAt ?: (now + ms), now)} 響鈴" else "  請設定時間",
             color = C.accentSoft, fontSize = 14.sp,
         )
     }
@@ -196,13 +200,17 @@ fun TimerEditDialog(timer: TimerEntity, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val boot = remember { AlarmScheduler.bootCount(context) }
+    // 打開視窗那一刻的牆上時間與剩餘時間（精確到毫秒，不做進位）
+    val openedAt = remember(timer.id) { System.currentTimeMillis() }
     val initial = remember(timer.id) {
-        NextTrigger.timerRemaining(timer, System.currentTimeMillis(), SystemClock.elapsedRealtime(), boot)
+        NextTrigger.timerRemaining(timer, openedAt, SystemClock.elapsedRealtime(), boot)
             .let { if (it <= 0) timer.durationMs else it }
     }
-    var ms by remember(timer.id) { mutableLongStateOf((initial + 999) / 1000 * 1000) }
+    var ms by remember(timer.id) { mutableLongStateOf(initial) }
     var label by remember(timer.id) { mutableStateOf(timer.label) }
     val running = timer.state == TimerState.RUNNING
+    // 執行中：響鈴時刻＝原本的響鈴時刻＋使用者增減的量；視窗開著的這段時間計時照樣在跑，不會被算進去
+    val runningRingAt = if (running) openedAt + ms else null
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -216,7 +224,7 @@ fun TimerEditDialog(timer: TimerEntity, onDismiss: () -> Unit) {
                 )
                 DurationWheels(ms) { ms = it }
                 AddTimeRow(ms) { ms = it }
-                RingAtLine(ms, if (running) "改完後" else "按開始的話")
+                RingAtLine(ms, if (running) "改完後" else "按開始的話", fixedAt = runningRingAt)
                 OutlinedTextField(
                     value = label, onValueChange = { label = it }, singleLine = true,
                     label = { Text("響鈴時顯示的提醒") },
@@ -229,7 +237,10 @@ fun TimerEditDialog(timer: TimerEntity, onDismiss: () -> Unit) {
             TextButton(enabled = ms > 0, onClick = {
                 val m = ms; val l = label.trim()
                 onDismiss()
-                scope.launch { Graph.repo.editTimer(timer.id, m, l, start = true) }
+                scope.launch {
+                    if (running) Graph.repo.shiftRunningTimer(timer.id, m - initial, l)
+                    else Graph.repo.editTimer(timer.id, m, l, start = true)
+                }
             }) { Text(if (running) "儲存" else "儲存並開始", color = if (ms > 0) C.accent else C.dim, fontWeight = FontWeight.Bold) }
         },
         dismissButton = {

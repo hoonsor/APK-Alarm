@@ -59,4 +59,4 @@ app/src/main/java/com/hoonsor/alarm/
 
 ## 版本
 
-目前 v0.10.1。進度與待辦見 [PROJECT_STATUS.md](PROJECT_STATUS.md)。
+目前 v0.10.2。進度與待辦見 [PROJECT_STATUS.md](PROJECT_STATUS.md)。

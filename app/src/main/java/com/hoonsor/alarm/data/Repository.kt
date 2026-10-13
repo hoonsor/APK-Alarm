@@ -266,6 +266,29 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
         scheduler.rescheduleAll("編輯計時")
     }
 
+    /**
+     * 執行中的計時器：把響鈴時刻往後（delta > 0）或往前（delta < 0）移動 delta 毫秒。
+     * 以「目前實際剩餘時間＋delta」計算，所以編輯視窗開著多久都不會讓響鈴時間跑掉；
+     * delta = 0（只改提醒文字）時完全不動排程。
+     */
+    suspend fun shiftRunningTimer(id: Long, deltaMs: Long, label: String) {
+        val t = timers.get(id) ?: return
+        if (t.state != TimerState.RUNNING) {
+            editTimer(id, (t.remainingMs + deltaMs).coerceAtLeast(1_000L), label, start = true)
+            return
+        }
+        if (deltaMs == 0L) {
+            if (label != t.label) timers.update(t.copy(label = label))
+            return
+        }
+        val current = com.hoonsor.alarm.domain.NextTrigger.timerRemaining(
+            t, System.currentTimeMillis(), SystemClock.elapsedRealtime(), AlarmScheduler.bootCount(Graph.appContext),
+        )
+        val rem = (current + deltaMs).coerceIn(1_000L, (99 * 3600L + 59 * 60L + 59) * 1000L)
+        timers.update(runningCopy(t.copy(label = label, pausedByGroup = false), rem))
+        scheduler.rescheduleAll("調整計時")
+    }
+
     /** 全部重設：停止並回到完整時長 */
     suspend fun resetTimers(ids: Collection<Long>) {
         ids.forEach { id ->
