@@ -87,6 +87,18 @@ object NextTrigger {
     }
 }
 
+/** 計時器編輯的純計算（JVM 單元測試覆蓋） */
+object TimerEdit {
+    const val MAX_MS = (99 * 3600L + 59 * 60L + 59) * 1000L
+
+    /** 使用者在編輯視窗裡增減了多少：滾輪最後的值 − 打開視窗時的剩餘時間 */
+    fun delta(initialRemaining: Long, edited: Long): Long = edited - initialRemaining
+
+    /** 執行中計時器套用增減量後的新剩餘時間（至少 1 秒、最多 99:59:59） */
+    fun shiftedRemaining(currentRemaining: Long, delta: Long): Long =
+        (currentRemaining + delta).coerceIn(1_000L, MAX_MS)
+}
+
 object Fmt {
     fun hm(hour: Int, minute: Int) = "%02d:%02d".format(hour, minute)
 

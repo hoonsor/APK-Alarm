@@ -51,6 +51,7 @@ import com.hoonsor.alarm.data.TimerEntity
 import com.hoonsor.alarm.data.TimerState
 import com.hoonsor.alarm.domain.Fmt
 import com.hoonsor.alarm.domain.NextTrigger
+import com.hoonsor.alarm.domain.TimerEdit
 import com.hoonsor.alarm.scheduler.AlarmScheduler
 import com.hoonsor.alarm.ui.common.Glyph
 import com.hoonsor.alarm.ui.common.GlyphIcon
@@ -198,7 +199,6 @@ fun RingAtLine(ms: Long, prefix: String = "現在開始的話", fixedAt: Long? =
 @Composable
 fun TimerEditDialog(timer: TimerEntity, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val boot = remember { AlarmScheduler.bootCount(context) }
     // 打開視窗那一刻的牆上時間與剩餘時間（精確到毫秒，不做進位）
     val openedAt = remember(timer.id) { System.currentTimeMillis() }
@@ -236,11 +236,13 @@ fun TimerEditDialog(timer: TimerEntity, onDismiss: () -> Unit) {
         confirmButton = {
             TextButton(enabled = ms > 0, onClick = {
                 val m = ms; val l = label.trim()
-                onDismiss()
-                scope.launch {
-                    if (running) Graph.repo.shiftRunningTimer(timer.id, m - initial, l)
+                // 用 App 層級的 scope：對話框一關閉，它自己的 rememberCoroutineScope 就會被取消，
+                // 寫入資料庫會跑到一半被中斷，造成「按儲存沒有效果」
+                Graph.appScope.launch {
+                    if (running) Graph.repo.shiftRunningTimer(timer.id, TimerEdit.delta(initial, m), l)
                     else Graph.repo.editTimer(timer.id, m, l, start = true)
                 }
+                onDismiss()
             }) { Text(if (running) "儲存" else "儲存並開始", color = if (ms > 0) C.accent else C.dim, fontWeight = FontWeight.Bold) }
         },
         dismissButton = {
@@ -248,8 +250,8 @@ fun TimerEditDialog(timer: TimerEntity, onDismiss: () -> Unit) {
                 if (!running) {
                     TextButton(enabled = ms > 0, onClick = {
                         val m = ms; val l = label.trim()
+                        Graph.appScope.launch { Graph.repo.editTimer(timer.id, m, l, start = false) }
                         onDismiss()
-                        scope.launch { Graph.repo.editTimer(timer.id, m, l, start = false) }
                     }) { Text("只儲存", color = C.textSoft) }
                 }
                 TextButton(onClick = onDismiss) { Text("取消", color = Color(0xFF9AA3B5)) }

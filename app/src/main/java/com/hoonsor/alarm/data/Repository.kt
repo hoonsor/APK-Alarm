@@ -284,7 +284,7 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
         val current = com.hoonsor.alarm.domain.NextTrigger.timerRemaining(
             t, System.currentTimeMillis(), SystemClock.elapsedRealtime(), AlarmScheduler.bootCount(Graph.appContext),
         )
-        val rem = (current + deltaMs).coerceIn(1_000L, (99 * 3600L + 59 * 60L + 59) * 1000L)
+        val rem = com.hoonsor.alarm.domain.TimerEdit.shiftedRemaining(current, deltaMs)
         timers.update(runningCopy(t.copy(label = label, pausedByGroup = false), rem))
         scheduler.rescheduleAll("調整計時")
     }
