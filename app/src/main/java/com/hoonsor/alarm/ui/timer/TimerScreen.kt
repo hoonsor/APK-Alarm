@@ -110,7 +110,7 @@ private enum class TimerSort(val key: String, val label: String, val short: Stri
 }
 
 @Composable
-fun TimerScreen(selection: TimerSelection, onVoice: () -> Unit) {
+fun TimerScreen(selection: TimerSelection, onVoice: () -> Unit, onDeleted: (List<TimerEntity>) -> Unit) {
     val context = LocalContext.current
     val timersFlow = remember { Graph.db.timerDao().observeAll() }
     val timers by timersFlow.collectAsState(initial = emptyList())
@@ -153,6 +153,8 @@ fun TimerScreen(selection: TimerSelection, onVoice: () -> Unit) {
         selection.ids.filter { it !in alive }.forEach { selection.toggle(it) }
     }
     BackHandler(enabled = selection.active) { selection.exit() }
+    // 舊版響完會停在「已完成 0 秒」，打開時一律回到原本的時長
+    LaunchedEffect(Unit) { repo.resetFinishedTimers() }
 
     fun remainingOf(t: TimerEntity) = NextTrigger.timerRemaining(t, nowWall, nowElapsed, boot)
     fun sorted(list: List<TimerEntity>): List<TimerEntity> = when (sort) {
@@ -233,7 +235,7 @@ fun TimerScreen(selection: TimerSelection, onVoice: () -> Unit) {
                         onPause = { scope.launch { repo.pauseTimer(t.id) } },
                         onResume = { scope.launch { repo.resumeTimer(t.id) } },
                         onReset = { scope.launch { repo.resetTimer(t.id) } },
-                        onDelete = { scope.launch { repo.deleteTimer(t.id) } },
+                        onDelete = { scope.launch { onDeleted(repo.deleteTimer(t.id)) } },
                     )
                 }
             }
@@ -376,7 +378,7 @@ private fun LazyGridScope.fullRow(key: String, content: @Composable () -> Unit) 
 
 /** 選取模式的底部操作列（取代導覽列） */
 @Composable
-fun TimerSelectionBar(selection: TimerSelection) {
+fun TimerSelectionBar(selection: TimerSelection, onDeleted: (List<TimerEntity>) -> Unit) {
     val scope = rememberCoroutineScope()
     val repo = Graph.repo
     val groupsFlow = remember { Graph.db.timerGroupDao().observeAll() }
@@ -426,9 +428,9 @@ fun TimerSelectionBar(selection: TimerSelection) {
             onDismissRequest = { confirmDelete = false },
             containerColor = C.surfaceHi,
             title = { Text("刪除 ${ids.size} 個計時器？", color = C.text) },
-            text = { Text("執行中的計時器會一併停止，刪除後無法復原。", color = C.textSoft) },
+            text = { Text("執行中的計時器會一併停止。刪除後 10 秒內可以按「復原」救回來。", color = C.textSoft) },
             confirmButton = {
-                TextButton(onClick = { confirmDelete = false; scope.launch { repo.deleteTimers(ids); selection.exit() } }) {
+                TextButton(onClick = { confirmDelete = false; scope.launch { onDeleted(repo.deleteTimers(ids)); selection.exit() } }) {
                     Text("刪除", color = C.danger)
                 }
             },
@@ -616,7 +618,11 @@ private fun TimerCard(
     val progress = if (t.durationMs > 0) (remaining.toFloat() / t.durationMs).coerceIn(0f, 1f) else 0f
     val shape = RoundedCornerShape(18.dp)
     val status = when (t.state) {
-        TimerState.PAUSED -> if (t.pausedByGroup || groupOff) "群組已關閉" else "已暫停"
+        TimerState.PAUSED -> when {
+            t.pausedByGroup || groupOff -> "群組已關閉"
+            kotlin.math.abs(remaining - t.durationMs) <= 999 -> "未開始"
+            else -> "已暫停"
+        }
         TimerState.DONE -> "已完成"
         TimerState.RINGING -> "響鈴中"
         TimerState.RUNNING -> "進行中"

@@ -106,6 +106,9 @@ interface TimerDao {
     @Insert
     suspend fun insert(timer: TimerEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(timers: List<TimerEntity>)
+
     @Update
     suspend fun update(timer: TimerEntity)
 

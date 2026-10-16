@@ -197,16 +197,36 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
 
     suspend fun resetTimer(id: Long) {
         val t = timers.get(id) ?: return
-        timers.update(
-            t.copy(state = TimerState.PAUSED, remainingMs = t.durationMs, endAtWall = null, endAtElapsed = null, pausedByGroup = false),
-        )
+        timers.update(t.resetCopy())
         scheduler.rescheduleAll("重設計時")
     }
 
-    suspend fun deleteTimer(id: Long) {
+    /** 刪除並回傳被刪的計時器，供「復原」使用 */
+    suspend fun deleteTimer(id: Long): List<TimerEntity> = deleteTimers(listOf(id))
+
+    /**
+     * 復原刪除：照原樣放回（執行中的照原本的響鈴時刻繼續；刪除期間已經到時間的會馬上響）。
+     * 刪除時正在響或已響完的，放回時回到完整時長。
+     */
+    suspend fun restoreTimers(list: List<TimerEntity>) {
+        if (list.isEmpty()) return
+        timers.upsertAll(list.map { t -> if (t.state == TimerState.RINGING || t.state == TimerState.DONE) t.resetCopy() else t })
+        scheduler.rescheduleAll("復原刪除計時")
+    }
+
+    /**
+     * 響完（按停止或響太久自動停止）：回到最初設定的時長，等下次再按開始。
+     * 已經被使用者改成別的狀態（例如響鈴時又編輯並開始）就不動。
+     */
+    suspend fun finishTimer(id: Long) {
         val t = timers.get(id) ?: return
-        timers.delete(t)
-        scheduler.rescheduleAll("刪除計時")
+        if (t.state != TimerState.RINGING && t.state != TimerState.DONE) return
+        timers.update(t.resetCopy())
+    }
+
+    /** 舊版留下的「已完成（0 秒）」計時器，一律回到完整時長 */
+    suspend fun resetFinishedTimers() {
+        timers.getAll().filter { it.state == TimerState.DONE }.forEach { timers.update(it.resetCopy()) }
     }
 
     /** 計時器貪睡：從現在起再倒數 n 毫秒 */
@@ -240,9 +260,10 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
         ids.forEach { moveTimerToGroup(it, groupId) }
     }
 
-    suspend fun deleteTimers(ids: Collection<Long>) {
-        ids.forEach { id -> timers.get(id)?.let { timers.delete(it) } }
-        scheduler.rescheduleAll("刪除計時")
+    suspend fun deleteTimers(ids: Collection<Long>): List<TimerEntity> {
+        val removed = ids.mapNotNull { id -> timers.get(id)?.also { timers.delete(it) } }
+        if (removed.isNotEmpty()) scheduler.rescheduleAll("刪除計時")
+        return removed
     }
 
     suspend fun pauseTimers(ids: Collection<Long>) = ids.forEach { pauseTimer(it) }
@@ -292,9 +313,7 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
     /** 全部重設：停止並回到完整時長 */
     suspend fun resetTimers(ids: Collection<Long>) {
         ids.forEach { id ->
-            timers.get(id)?.let { t ->
-                timers.update(t.copy(state = TimerState.PAUSED, remainingMs = t.durationMs, endAtWall = null, endAtElapsed = null, pausedByGroup = false))
-            }
+            timers.get(id)?.let { t -> timers.update(t.resetCopy()) }
         }
         scheduler.rescheduleAll("重設計時")
     }
@@ -354,6 +373,10 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
         timerGroups.update(g.copy(enabled = true))
         timers.getByGroup(groupId).filter { it.pausedByGroup }.forEach { timers.update(it.copy(pausedByGroup = false)) }
     }
+
+    /** 停下並回到最初建立的完整時長 */
+    private fun TimerEntity.resetCopy() =
+        copy(state = TimerState.PAUSED, remainingMs = durationMs, endAtWall = null, endAtElapsed = null, pausedByGroup = false)
 
     private fun runningCopy(t: TimerEntity, remaining: Long): TimerEntity {
         val nowWall = System.currentTimeMillis()

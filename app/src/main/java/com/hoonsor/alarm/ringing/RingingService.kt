@@ -25,7 +25,6 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import com.hoonsor.alarm.Graph
-import com.hoonsor.alarm.data.TimerState
 import com.hoonsor.alarm.scheduler.FireType
 import com.hoonsor.alarm.sound.SoundStore
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -344,8 +343,8 @@ class RingingService : Service() {
             FireType.TIMER -> if (snoozeMs != null) {
                 repo.snoozeTimer(info.id, snoozeMs)
             } else {
-                val dao = Graph.db.timerDao()
-                dao.get(info.id)?.let { dao.update(it.copy(state = TimerState.DONE)) }
+                // 響完回到原本設定的時長（不留在 0 秒），排序位置也跟著回到原處
+                repo.finishTimer(info.id)
             }
         }
         Graph.scheduler.rescheduleAll(if (snoozeMs != null) "貪睡" else "停止響鈴")

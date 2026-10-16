@@ -83,16 +83,26 @@ fun WheelPicker(range: IntRange, value: Int, onValue: (Int) -> Unit, unit: Strin
     }
     val currentValue by rememberUpdatedState(value)
     val currentOnValue by rememberUpdatedState(onValue)
-    // 停止捲動時回報選取值
+    /** 程式自己捲動中（外部改值時捲過去），這段期間經過的值不回報 */
+    var autoScrolling by remember { mutableStateOf(false) }
+    // 使用者捲動時，中間那格一換就立刻回報。
+    // 以前要等滾輪完全停下才回報，滾輪還在減速時就按「儲存」，存到的會是舊值。
     LaunchedEffect(state) {
-        snapshotFlow { state.isScrollInProgress to centered }
-            .filter { !it.first }
+        snapshotFlow { centered to autoScrolling }
+            .filter { !it.second }
             .distinctUntilChanged()
-            .collect { (_, v) -> if (v != currentValue) currentOnValue(v) }
+            .collect { (v, _) -> if (v != currentValue) currentOnValue(v) }
     }
     // 外部改值時捲過去
     LaunchedEffect(value) {
-        if (!state.isScrollInProgress && centered != value) state.animateScrollToItem((value - range.first).coerceAtLeast(0))
+        if (!state.isScrollInProgress && centered != value) {
+            autoScrolling = true
+            try {
+                state.animateScrollToItem((value - range.first).coerceAtLeast(0))
+            } finally {
+                autoScrolling = false
+            }
+        }
     }
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.fillMaxWidth().height(ITEM_H * 3), contentAlignment = Alignment.Center) {
@@ -131,11 +141,17 @@ fun DurationWheels(ms: Long, onChange: (Long) -> Unit) {
     val h = (total / 3600).toInt()
     val m = ((total % 3600) / 60).toInt()
     val s = (total % 60).toInt()
-    fun emit(nh: Int, nm: Int, ns: Int) = onChange((nh * 3600L + nm * 60L + ns) * 1000L)
+    // 最新的時/分/秒；兩個滾輪在同一個畫面更新前先後回報時，後者不會用舊值蓋掉前者
+    val latest = remember { IntArray(3) }
+    latest[0] = h; latest[1] = m; latest[2] = s
+    fun emit(index: Int, v: Int) {
+        latest[index] = v
+        onChange((latest[0] * 3600L + latest[1] * 60L + latest[2]) * 1000L)
+    }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        WheelPicker(0..99, h, { emit(it, m, s) }, "時", Modifier.weight(1f))
-        WheelPicker(0..59, m, { emit(h, it, s) }, "分", Modifier.weight(1f))
-        WheelPicker(0..59, s, { emit(h, m, it) }, "秒", Modifier.weight(1f))
+        WheelPicker(0..99, h, { emit(0, it) }, "時", Modifier.weight(1f))
+        WheelPicker(0..59, m, { emit(1, it) }, "分", Modifier.weight(1f))
+        WheelPicker(0..59, s, { emit(2, it) }, "秒", Modifier.weight(1f))
     }
 }
 
@@ -209,8 +225,24 @@ fun TimerEditDialog(timer: TimerEntity, onDismiss: () -> Unit) {
     var ms by remember(timer.id) { mutableLongStateOf(initial) }
     var label by remember(timer.id) { mutableStateOf(timer.label) }
     val running = timer.state == TimerState.RUNNING
-    // 執行中：響鈴時刻＝原本的響鈴時刻＋使用者增減的量；視窗開著的這段時間計時照樣在跑，不會被算進去
-    val runningRingAt = if (running) openedAt + ms else null
+    /**
+     * 執行中的計時器怎麼套用修改：
+     * 轉過滾輪＝「儲存後剩下滾輪上的時間」（看到幾分就是幾分）；
+     * 只按「+N 分」＝在目前實際剩下的時間上再加 N 分（視窗開著時計時照跑，不會被吃掉）。
+     */
+    var setByWheel by remember(timer.id) { mutableStateOf(false) }
+    var liveRemaining by remember(timer.id) { mutableLongStateOf(initial) }
+    if (running) {
+        LaunchedEffect(timer.id) {
+            while (true) {
+                liveRemaining = NextTrigger.timerRemaining(timer, System.currentTimeMillis(), SystemClock.elapsedRealtime(), boot)
+                delay(250)
+            }
+        }
+    }
+    val changed = ms != initial
+    // 執行中：滾輪＝從儲存那一刻起算；只按 +N 分＝原本的響鈴時刻往後移
+    val runningRingAt = if (running && changed && !setByWheel) openedAt + ms else null
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -218,13 +250,19 @@ fun TimerEditDialog(timer: TimerEntity, onDismiss: () -> Unit) {
         title = { Text("編輯計時器", color = C.text) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    if (running) "調整剩下的時間（計時繼續進行）" else "調整剩下的時間",
-                    color = C.muted, fontSize = 12.sp,
-                )
-                DurationWheels(ms) { ms = it }
+                if (running) {
+                    Text("目前剩下 ${Fmt.duration(liveRemaining)}（計時繼續進行）", color = C.textSoft, fontSize = 13.sp)
+                    Text("轉滾輪設定儲存後要剩下多少時間，或按「+N 分」加時間", color = C.muted, fontSize = 12.sp)
+                } else {
+                    Text("調整剩下的時間", color = C.muted, fontSize = 12.sp)
+                }
+                DurationWheels(ms) { ms = it; setByWheel = true }
                 AddTimeRow(ms) { ms = it }
-                RingAtLine(ms, if (running) "改完後" else "按開始的話", fixedAt = runningRingAt)
+                if (running && !changed) {
+                    RingAtLine(initial, "目前預計", fixedAt = openedAt + initial)
+                } else {
+                    RingAtLine(ms, if (running) "儲存的話" else "按開始的話", fixedAt = runningRingAt)
+                }
                 OutlinedTextField(
                     value = label, onValueChange = { label = it }, singleLine = true,
                     label = { Text("響鈴時顯示的提醒") },
@@ -238,9 +276,12 @@ fun TimerEditDialog(timer: TimerEntity, onDismiss: () -> Unit) {
                 val m = ms; val l = label.trim()
                 // 用 App 層級的 scope：對話框一關閉，它自己的 rememberCoroutineScope 就會被取消，
                 // 寫入資料庫會跑到一半被中斷，造成「按儲存沒有效果」
+                val byWheel = setByWheel && m != initial
                 Graph.appScope.launch {
-                    if (running) Graph.repo.shiftRunningTimer(timer.id, TimerEdit.delta(initial, m), l)
-                    else Graph.repo.editTimer(timer.id, m, l, start = true)
+                    when {
+                        !running || byWheel -> Graph.repo.editTimer(timer.id, m, l, start = true)
+                        else -> Graph.repo.shiftRunningTimer(timer.id, TimerEdit.delta(initial, m), l)
+                    }
                 }
                 onDismiss()
             }) { Text(if (running) "儲存" else "儲存並開始", color = if (ms > 0) C.accent else C.dim, fontWeight = FontWeight.Bold) }

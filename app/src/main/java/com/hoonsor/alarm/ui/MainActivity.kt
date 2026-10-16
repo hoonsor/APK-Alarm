@@ -55,6 +55,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.hoonsor.alarm.Graph
 import com.hoonsor.alarm.data.AlarmEntity
+import com.hoonsor.alarm.data.TimerEntity
 import com.hoonsor.alarm.domain.Days
 import com.hoonsor.alarm.domain.Fmt
 import com.hoonsor.alarm.ui.alarms.AlarmEditorSheet
@@ -174,6 +175,18 @@ private fun MainScreen() {
         }
     }
 
+    /** 刪除計時器後顯示約 10 秒的「復原」 */
+    fun showTimerUndo(removed: List<TimerEntity>) {
+        if (removed.isEmpty()) return
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            val name = removed.singleOrNull()?.label?.takeIf { it.isNotBlank() }?.let { "「$it」" }
+            val msg = if (name != null) "已刪除計時器$name" else "已刪除 ${removed.size} 個計時器"
+            val r = snackbar.showSnackbar(msg, actionLabel = "復原", duration = SnackbarDuration.Long)
+            if (r == SnackbarResult.ActionPerformed) Graph.appScope.launch { Graph.repo.restoreTimers(removed) }
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(C.bg).safeDrawingPadding()) {
         when (overlay) {
             Overlay.HEALTH -> HealthScreen(onBack = { overlay = Overlay.NONE })
@@ -197,7 +210,11 @@ private fun MainScreen() {
                             onOpenSettings = { overlay = Overlay.SETTINGS },
                             onVoice = { voiceForTimer = false; overlay = Overlay.VOICE },
                         )
-                        Tab.TIMER -> TimerScreen(timerSelection, onVoice = { voiceForTimer = true; overlay = Overlay.VOICE })
+                        Tab.TIMER -> TimerScreen(
+                            timerSelection,
+                            onVoice = { voiceForTimer = true; overlay = Overlay.VOICE },
+                            onDeleted = ::showTimerUndo,
+                        )
                         Tab.STOPWATCH -> StopwatchScreen()
                     }
                 }
@@ -205,7 +222,7 @@ private fun MainScreen() {
                 if (tab == Tab.ALARMS && vm.selecting) {
                     AlarmSelectionBar(vm, onDelete = { scope.launch { showUndo(vm.bulkDelete()) } })
                 } else if (tab == Tab.TIMER && timerSelection.active) {
-                    TimerSelectionBar(timerSelection)
+                    TimerSelectionBar(timerSelection, onDeleted = ::showTimerUndo)
                 } else {
                     BottomNav(tab) { tab = it; vm.exitSelect(); timerSelection.exit() }
                 }
