@@ -21,6 +21,7 @@
 - **支援標準 Intent**：Google 助理或你自己的自動化工具可用 `ACTION_SET_ALARM`、`ACTION_SET_TIMER` 直接在本 App 建立鬧鐘與計時器。
 
 - **備份與還原**：鬧鐘、群組、計時器與設定可打包成一個備份檔（可選擇是否包含圖片與鈴聲）。可以「分享」給 LINE、新增至 Dropbox、上傳到雲端硬碟等任何 App，或「儲存到檔案」；匯入可選「合併」或「取代」。手機開啟 Google 備份時，Android 也會自動備份並在重新安裝或換手機時還原。
+- **免接線更新**：每天開啟時自動檢查 GitHub 上的新版，也可在設定頁按「檢查更新」；確認後直接下載並交給系統安裝，鬧鐘資料保留、更新完自動重新排程。也支援用 Obtainium 追蹤更新。
 
 ## 為什麼比一般鬧鐘可靠
 
@@ -38,7 +39,43 @@
 3. 首次開啟：允許通知權限，然後點右上角狀態燈進入「響鈴可靠度」，把橘色項目逐一處理（尤其是電池最佳化豁免與廠牌自啟動）。
 4. 在可靠度頁按「測試響鈴：1 分鐘後」，鎖屏等待確認響鈴畫面正常。
 
-單元測試：`./gradlew test`（涵蓋下次響鈴計算與語音解析）。
+單元測試：`./gradlew test`（涵蓋下次響鈴計算、語音解析與版本比較）。
+
+## 手機端更新（不用接線）
+
+正式版由 GitHub Actions 編譯、用共用金鑰 `hoonsor-release.jks` 簽章，發布在 [Releases](https://github.com/hoonsor/APK-Alarm/releases)。手機有兩種更新方式，擇一或並用：
+
+**App 內更新（建議）**
+- 每天第一次開啟 App 時在背景檢查一次；有新版會跳出版本號與更新說明，可選「下載並更新」「稍後」或「略過此版」。
+- 設定頁最下方「App 更新」可隨時手動檢查。
+- 第一次更新時會引導你到「安裝不明應用程式」允許本 App，回到 App 後自動開始下載。
+- 沒網路或 GitHub 無法連線時安靜略過，不影響任何鬧鐘。
+
+**Obtainium 設定**
+1. 在手機安裝 [Obtainium](https://github.com/ImranR98/Obtainium/releases)。
+2. 「Add App」→ App Source URL 填 `https://github.com/hoonsor/APK-Alarm`。
+3. 保持「Include prereleases」關閉（`latest` 是每次推送 main 自動編譯的測試版，不要追它）。
+4. 若同一個 Release 未來有多個 APK，在「Filter APKs by Regular Expression」填 `HoonsorAlarm-v.*\.apk`。
+5. 新增後 Obtainium 會定期檢查，有新版時通知並一鍵安裝。
+
+**第一次切換到正式簽章版（只需一次）**：如果手機上現在是用 Android Studio 直接安裝的 debug 版，簽章不同，系統不允許覆蓋安裝。請先在設定頁「備份與還原」分享備份檔 → 解除安裝 → 從 Releases 安裝正式版 → 匯入備份（選「取代」）。之後就都能直接更新。
+
+## 如何發新版
+
+1. 修改 `app/build.gradle.kts` 的 `versionCode`（加 1）與 `versionName`（例如 `0.11.1`）。
+2. 在 `PROJECT_STATUS.md` 新增 `### v0.11.1 — 日期` 段落，這段文字會自動成為 Release 的更新說明（也就是 App 內更新對話框顯示的內容）。
+3. 提交並推送 main，接著推送同名 tag：
+
+   ```bash
+   git tag v0.11.1
+   git push origin main v0.11.1
+   ```
+
+4. GitHub Actions 會跑單元測試、編譯 `HoonsorAlarm-v0.11.1.apk` 並建立正式 Release。tag 與 `versionName` 不一致時 CI 會直接失敗，避免 App 一直以為有新版。
+
+其他說明：
+- 每次推送 main 都會更新名為 `latest` 的預先發行版（`HoonsorAlarm-latest.apk`），給想搶先測試時手動下載；App 內更新與 Obtainium 預設都不會把它當成新版。
+- 簽章 Secrets（`SIGNING_KEYSTORE_B64`、`SIGNING_STORE_PASSWORD`、`SIGNING_KEY_ALIAS`、`SIGNING_KEY_PASSWORD`）由倬執行 `setup-hoonsor-signing.ps1` 寫入。沒有 Secrets 時 CI 會用 debug 簽章並顯示警告，這種 APK 無法覆蓋安裝，不要拿來發正式版。
 
 ## 專案結構
 
@@ -52,6 +89,7 @@ app/src/main/java/com/hoonsor/alarm/
 ├── image/ImageStore.kt    響鈴圖片匯入（複製壓縮到 App 內部）
 ├── sound/SoundStore.kt    鈴聲匯入、名稱、試聽
 ├── backup/                備份檔匯出、匯入（合併／取代）
+├── update/                App 內自我更新（查 GitHub Releases、下載、PackageInstaller 安裝），可整包複製到其他 APP
 ├── tts/TtsEngine.kt       語音播報（念出文字、MiniMax 預先產生與快取）
 ├── voice/                 語音辨識畫面、AI 解析（AiParser）與離線規則解析
 └── ui/                    鬧鐘、計時器、碼錶、可靠度、設定畫面
@@ -59,4 +97,4 @@ app/src/main/java/com/hoonsor/alarm/
 
 ## 版本
 
-目前 v0.10.3。進度與待辦見 [PROJECT_STATUS.md](PROJECT_STATUS.md)。
+目前 v0.11.0。進度與待辦見 [PROJECT_STATUS.md](PROJECT_STATUS.md)。

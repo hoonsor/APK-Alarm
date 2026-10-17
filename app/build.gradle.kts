@@ -5,6 +5,9 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// 共用簽章 hoonsor-release.jks：由 CI 從 Secrets 解出；本機或沒有 Secrets 時退回 debug 簽章
+val signingPath: String? = System.getenv("SIGNING_KEYSTORE_PATH")?.takeIf { it.isNotBlank() && file(it).exists() }
+
 android {
     namespace = "com.hoonsor.alarm"
     compileSdk = 35
@@ -13,13 +16,26 @@ android {
         applicationId = "com.hoonsor.alarm"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.10.4"
+        // 發新版：改這兩行後 push vX.Y.Z tag（tag 必須與 versionName 相同，CI 會檢查）
+        versionCode = 17
+        versionName = "0.11.0"
+    }
+
+    signingConfigs {
+        if (signingPath != null) {
+            create("hoonsor") {
+                storeFile = file(signingPath)
+                storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+                keyAlias = System.getenv("SIGNING_KEY_ALIAS")
+                keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = if (signingPath != null) signingConfigs.getByName("hoonsor") else signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

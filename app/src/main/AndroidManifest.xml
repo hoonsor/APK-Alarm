@@ -22,6 +22,9 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- App 內自我更新：從 GitHub Releases 下載新版 APK 後交給系統安裝 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <queries>
         <intent>
             <action android:name="android.speech.RecognitionService" />
@@ -88,6 +91,11 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- 接收 App 內更新的安裝結果（PackageInstaller session） -->
+        <receiver
+            android:name=".update.UpdateInstallReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".scheduler.AlarmReceiver"

@@ -53,6 +53,7 @@ import com.hoonsor.alarm.ui.common.GlyphIcon
 import com.hoonsor.alarm.ui.common.SoundSetting
 import com.hoonsor.alarm.ui.common.rememberBitmap
 import com.hoonsor.alarm.ui.theme.C
+import com.hoonsor.alarm.update.UpdateCard
 import kotlinx.coroutines.launch
 
 @Composable
@@ -182,6 +183,8 @@ fun SettingsScreen(onBack: () -> Unit) {
             AiCard()
 
             BackupCard()
+
+            UpdateCard()
             Spacer(Modifier.height(24.dp))
         }
     }

@@ -73,6 +73,7 @@ import com.hoonsor.alarm.ui.theme.C
 import com.hoonsor.alarm.ui.timer.TimerScreen
 import com.hoonsor.alarm.ui.timer.TimerSelection
 import com.hoonsor.alarm.ui.timer.TimerSelectionBar
+import com.hoonsor.alarm.update.AutoUpdateCheck
 import com.hoonsor.alarm.voice.VoiceScreen
 import kotlinx.coroutines.launch
 
@@ -231,6 +232,9 @@ private fun MainScreen() {
 
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 88.dp))
     }
+
+    // 每天最多一次在背景檢查新版；失敗時安靜略過，不影響響鈴
+    AutoUpdateCheck()
 
     val alarms by vm.alarms.collectAsState()
     val editing = vm.editingId?.let { id -> alarms.firstOrNull { it.id == id } }

@@ -1,0 +1,118 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # GitHub runner 已內建 Android SDK（ANDROID_HOME），不需要另外安裝
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Read version
+        id: ver
+        run: |
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "versionName = ${VERSION}"
+
+      # tag 與 versionName 不一致時，App 內更新會一直以為有新版，所以直接擋下
+      - name: Check tag matches versionName
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          if [ "${GITHUB_REF_NAME}" != "v${{ steps.ver.outputs.version }}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} 與 versionName ${{ steps.ver.outputs.version }} 不一致，請先改 app/build.gradle.kts"
+            exit 1
+          fi
+
+      # 共用簽章 hoonsor-release.jks：Secrets 由倬用 setup-hoonsor-signing.ps1 寫入；沒有時 Gradle 退回 debug 簽章
+      - name: Decode signing key
+        env:
+          SIGNING_KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$SIGNING_KEYSTORE_B64" ]; then
+            echo "$SIGNING_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/hoonsor-release.jks"
+            echo "SIGNING_KEYSTORE_PATH=$RUNNER_TEMP/hoonsor-release.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::沒有 SIGNING_KEYSTORE_B64，這次用 debug 簽章。debug 簽章每次編譯都不同，手機無法覆蓋安裝，App 內更新與 Obtainium 都會失敗。"
+          fi
+
+      - name: Unit tests and release APK
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          set -o pipefail
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest :app:assembleRelease --no-daemon 2>&1 | tee build.log
+
+      # 編譯失敗時把錯誤寫成 annotation，方便不下載 log 也能看到原因
+      - name: Report build errors
+        if: failure()
+        run: |
+          grep -E "^e: |error:|What went wrong|Could not|FAILED|> " build.log | head -40 | while IFS= read -r line; do
+            echo "::error::${line//%/%25}"
+          done || true
+
+      - name: Rename APK with version
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/HoonsorAlarm-v${{ steps.ver.outputs.version }}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HoonsorAlarm-v${{ steps.ver.outputs.version }}
+          path: dist/*.apk
+
+      # main 每次推送都更新「latest」預先發行版，手機打開固定網址即可下載最新測試版
+      # （預先發行版不會被 App 內更新與 Obtainium 預設設定當成正式新版）
+      - name: Publish rolling latest
+        if: github.ref == 'refs/heads/main'
+        run: |
+          cp dist/HoonsorAlarm-v*.apk HoonsorAlarm-latest.apk
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest HoonsorAlarm-latest.apk \
+            --prerelease --title "最新測試版（自動編譯 v${{ steps.ver.outputs.version }}）" \
+            --notes "commit ${GITHUB_SHA::7} 自動編譯的測試版，正式版請看標記為 Latest 的 Release。" \
+            --target "${GITHUB_SHA}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # 更新說明取自 PROJECT_STATUS.md 對應版本的段落（### vX.Y.Z 到下一個 ###）
+      - name: Release notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          awk -v ver="### ${GITHUB_REF_NAME}" '
+            index($0, ver) == 1 { on = 1; next }
+            on && /^#/ { exit }
+            on { print }
+          ' PROJECT_STATUS.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "${GITHUB_REF_NAME} 版本更新。" > notes.md
+          fi
+          cat notes.md
+
+      # 推送 vX.Y.Z tag 時建立正式 Release（App 內更新與 Obtainium 都讀這裡）
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body_path: notes.md
+          files: dist/*.apk

@@ -1,10 +1,24 @@
 # PROJECT_STATUS
 
 - 專案：鬧鐘（HoonsorAlarm）
-- 目前版本：v0.10.4
-- 最後更新：2026/10/16
+- 目前版本：v0.11.0
+- 最後更新：2026/10/17
+
+## 發布流程（免接線更新）
+
+- 發新版：改 `app/build.gradle.kts` 的 `versionCode`／`versionName` → 在下方新增 `### vX.Y.Z — 日期` 段落（會成為 Release 更新說明）→ 推送 main 與同名 `vX.Y.Z` tag。CI 會檢查 tag 與 versionName 一致、跑單元測試、編譯並發布 `HoonsorAlarm-vX.Y.Z.apk`。
+- 推送 main 會自動更新 `latest` 預先發行版（測試用，App 內更新與 Obtainium 不會追它）。
+- 手機端：App 內更新（每天開啟時自動檢查、設定頁「檢查更新」）或 Obtainium（來源 `https://github.com/hoonsor/APK-Alarm`，不要勾 prereleases）。詳細步驟見 README「手機端更新」。
+- 簽章：共用金鑰 `hoonsor-release.jks`，Secrets 由倬執行 `D:-Project-Claude使用流程改善\setup-hoonsor-signing.ps1` 寫入。**目前尚未設定**，在設定前 CI 產出的都是 debug 簽章、無法覆蓋安裝，先不要推 tag。
+- 第一次從 debug 版換成正式簽章版：先備份 → 解除安裝 → 安裝正式版 → 匯入備份（只需一次）。
 
 ## 版本紀錄
+
+### v0.11.0 — 2026/10/17
+- feat: App 內自我更新：每天開啟時檢查 GitHub 最新正式版，設定頁新增「App 更新」卡片可手動檢查；確認後下載 APK 到快取目錄，用 PackageInstaller 安裝，未允許「安裝不明應用程式」時引導到設定頁。網路錯誤一律安靜略過，不影響響鈴
+- feat: GitHub Actions 自動編譯：推送 vX.Y.Z tag 發布正式 Release（HoonsorAlarm-vX.Y.Z.apk），推送 main 更新 latest 測試版；簽章改讀共用金鑰 hoonsor-release.jks 的環境變數，沒有時退回 debug
+- fix(voice): 語料測試修正 VoiceParser（多個星期、一刻、晚間、鐘頭、結尾的半、沒說時段的 1–6 點當下午）
+- test: 版本比較與 Release 解析單元測試
 
 ### v0.10.4 — 2026/10/16
 - feat: 刪除計時器（卡片刪除鈕或多選刪除）後顯示約 10 秒的「復原」提示；復原後執行中的照原本響鈴時刻繼續
@@ -112,6 +126,8 @@
 
 ## 待辦
 
+- [ ] 倬執行 setup-hoonsor-signing.ps1 寫入 SIGNING_* Secrets，再推 v0.11.0 tag
+- [ ] v0.11.0 實機驗證：手機改裝正式簽章版（備份→解除安裝→安裝→還原）、App 內更新完整流程、Obtainium 追蹤
 - [x] v0.1.0 已在 OPPO Reno 14F 實機編譯安裝
 - [ ] v0.2.0 實機驗證：資料庫升級、群組、自訂 mp3 鈴聲、M3 解析
 - [ ] v0.3.0 實機驗證：個別音量還原、內建 TTS、MiniMax 語音快取
