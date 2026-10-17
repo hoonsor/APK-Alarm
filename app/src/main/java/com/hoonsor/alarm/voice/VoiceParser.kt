@@ -99,7 +99,7 @@ object VoiceParser {
 
         parseTimer(text, preferTimer)?.let { return VoiceIntent.Timer(it, memo.ifBlank { timerMemo(text) }, groupName) }
 
-        val time = parseClock(text) ?: return VoiceIntent.Unknown("聽不出時間，試試「早上七點十五」或「二十五分鐘後」")
+        val time = parseClock(stripDays(text)) ?: return VoiceIntent.Unknown("聽不出時間，試試「早上七點十五」或「二十五分鐘後」")
         val (hour, minute) = time
         val mask = parseDays(text)
         if (mask != 0) return VoiceIntent.Alarm(hour, minute, mask, memo, groupName = groupName)
@@ -107,7 +107,7 @@ object VoiceParser {
         val today = now.toLocalDate()
         return when {
             text.contains("後天") -> VoiceIntent.Alarm(hour, minute, 0, memo, today.plusDays(2), groupName = groupName)
-            text.contains("明天") || text.contains("明早") -> {
+            text.contains("明天") || text.contains("明早") || text.contains("明晚") -> {
                 val targetToday = now.toLocalDate().atTime(hour, minute)
                 // 凌晨說「明天早上」：可能是指天亮後的今天
                 if (now.hour < 5 && targetToday.isAfter(now)) {
@@ -187,66 +187,143 @@ object VoiceParser {
     /** 「十二分鐘煮麵」這種沒有「提醒我」的說法：去掉時長與贅字，剩下的當提醒 */
     private fun timerMemo(t: String): String {
         val rest = t
-            .replace(Regex("${NUM}個?半?(小時|鐘頭)半?"), "")
-            .replace(Regex("${NUM}(分鐘|分)"), "")
+            .replace(HOURS, "")
+            .replace(MINUTES, "")
             .replace(Regex("${NUM}秒(鐘)?"), "")
-            .replace(Regex("半小時"), "")
+            .replace(HALF_HOUR, "")
             .replace(Regex("(幫我|請|設定?|開始|一個|新增|建立|倒數|計時器?|之後|以後|後|的|吧|一下|timer)"), "")
             .trim(',', '、', ' ')
         return if (rest.length in 1..20) rest else ""
     }
 
+    /** 「一個半小時」「兩小時半」「兩個鐘頭半」「一個鐘」「一個半鐘」 */
+    private val HOURS = Regex("(${NUM})(?:個(半)?(?:小時|鐘頭|鐘)|(半)?(?:小時|鐘頭))(半)?")
+    private val HALF_HOUR = Regex("半個?(?:小時|鐘頭|鐘)")
+
+    /** 「5分半」「兩分半鐘」 */
+    private val MINUTES = Regex("(${NUM})分鐘?(半)?")
+
     private fun parseTimer(t: String, preferTimer: Boolean = false): Long? {
         val isTimer = preferTimer || t.contains("後") || t.contains("倒數") || t.contains("計時")
         if (!isTimer || Regex("$NUM[點:：]").containsMatchIn(t) && !t.contains("小時")) return null
-        var ms = 0L
-        if (t.contains("半小時") && !Regex("${NUM}個?半小時").containsMatchIn(t)) ms += 30 * 60_000L
-        Regex("(${NUM})個?(半)?(小時|鐘頭)").find(t)?.let { m ->
-            ms += (cn(m.groupValues[1]) ?: 0) * 3_600_000L
-            if (m.groupValues[2].isNotEmpty()) ms += 30 * 60_000L
-        }
-        Regex("(${NUM})(分鐘|分)").find(t)?.let { ms += (cn(it.groupValues[1]) ?: 0) * 60_000L }
-        Regex("(${NUM})秒").find(t)?.let { ms += (cn(it.groupValues[1]) ?: 0) * 1000L }
+        // 「倒數半小時,30分鐘後」是同一段時間講兩次：各子句時長都相同就只算一次，否則加總
+        val parts = t.split(',').map(::clauseDuration).filter { it > 0 }
+        val ms = if (parts.distinct().size == 1) parts[0] else parts.sum()
         return ms.takeIf { it > 0 }
+    }
+
+    private fun clauseDuration(clause: String): Long {
+        var ms = 0L
+        var t = clause
+        HOURS.find(t)?.let { m ->
+            ms += (cn(m.groupValues[1]) ?: 0) * 3_600_000L
+            if ((2..4).any { m.groupValues[it].isNotEmpty() }) ms += 30 * 60_000L
+            t = t.removeRange(m.range)
+        }
+        if (HALF_HOUR.containsMatchIn(t)) ms += 30 * 60_000L
+        MINUTES.find(t)?.let { m ->
+            ms += (cn(m.groupValues[1]) ?: 0) * 60_000L
+            if (m.groupValues[2].isNotEmpty()) ms += 30_000L
+        }
+        Regex("(${NUM})秒").find(t)?.let { ms += (cn(it.groupValues[1]) ?: 0) * 1000L }
+        return ms
     }
 
     // ---------- 時刻 ----------
 
+    private const val PERIOD = "凌晨|清晨|早晨|早上|上午|中午|下午|傍晚|晚上|晚間|今晚|明晚|夜裡|半夜"
+
+    private const val QUARTER = "[一二兩三]刻"
+
     private fun parseClock(t: String): Pair<Int, Int>? {
-        val m = Regex("(凌晨|清晨|早上|上午|中午|下午|傍晚|晚上|半夜)?($NUM)[點:：]($NUM|半)?(分)?").find(t) ?: return null
-        val period = m.groupValues[1]
+        // 「差一刻六點」「六點差五分」：先算整點，再往前扣
+        Regex("($PERIOD)?差($QUARTER|$NUM)分?鐘?($NUM)點|($PERIOD)?($NUM)點差($QUARTER|$NUM)分?").find(t)?.let { m ->
+            val g = m.groupValues
+            val (period, before, h) = if (g[3].isNotEmpty()) Triple(g[1], g[2], g[3]) else Triple(g[4], g[6], g[5])
+            val minus = if (before.endsWith("刻")) (cn(before.dropLast(1)) ?: 0) * 15 else cn(before) ?: 0
+            val hour = withPeriod(period.ifEmpty { periodBefore(t, m.range.first) }, cn(h) ?: return null, twentyFour = false)
+            if (hour !in 0..23 || minus !in 1..59) return null
+            return (hour + 23) % 24 to 60 - minus
+        }
+        val m = Regex("($PERIOD)?($NUM)[點:：]過?($QUARTER|$NUM|半)?(分)?").find(t) ?: return null
+        // 時段放在後面：「兩點四十下午」「1點PM」
+        val period = m.groupValues[1].ifEmpty {
+            Regex("^鐘?(下午|晚上|PM|pm|AM|am)").find(t.substring(m.range.last + 1))?.groupValues?.get(1)
+                ?.let { if (it.equals("PM", true)) "下午" else if (it.equals("AM", true)) "上午" else it }
+                ?: periodBefore(t, m.range.first)
+        }
         var hour = cn(m.groupValues[2]) ?: return null
         val minPart = m.groupValues[3]
         val minute = when {
             minPart == "半" -> 30
             minPart.isEmpty() -> 0
+            minPart.endsWith("刻") -> (cn(minPart.dropLast(1)) ?: 0) * 15
             else -> cn(minPart) ?: 0
         }
-        when (period) {
-            "下午", "傍晚", "晚上" -> if (hour in 1..11) hour += 12
-            "中午" -> if (hour in 1..2) hour += 12
-            "半夜" -> if (hour == 12) hour = 0
-        }
+        hour = withPeriod(period, hour, twentyFour = !m.value.contains('點'))
         if (hour !in 0..23 || minute !in 0..59) return null
         return hour to minute
     }
 
+    /** 時段詞沒緊貼在時刻（「明天早上記得六點」「六點四十，早上那個」）：先取時刻前最後一個，沒有再找後面的 */
+    private fun periodBefore(t: String, end: Int): String =
+        Regex(PERIOD).findAll(t.substring(0, end)).lastOrNull()?.value
+            ?: Regex(PERIOD).find(t, end)?.value ?: ""
+
+    /**
+     * 沒說時段：「兩點」這類口語的 1–6 點一律當下午（倬的決定，不跳選項）；
+     * 「14:00」「6:30」這種阿拉伯數字冒號寫法視為 24 小時制，照字面。
+     */
+    private fun withPeriod(period: String, hour: Int, twentyFour: Boolean): Int = when (period) {
+        "" -> if (!twentyFour && hour in 1..6) hour + 12 else hour
+        "下午", "傍晚", "晚上", "晚間", "今晚", "明晚", "夜裡" -> if (hour in 1..11) hour + 12 else hour
+        "中午" -> if (hour in 1..2) hour + 12 else hour
+        "半夜" -> if (hour == 12) 0 else hour
+        else -> hour
+    }
+
     // ---------- 星期 ----------
 
-    private fun parseDays(t: String): Int {
-        if (t.contains("每天") || t.contains("每日")) return Days.EVERYDAY
-        if (t.contains("平日") || t.contains("工作日") || t.contains("上班日")) return Days.WEEKDAYS
-        if (t.contains("週末") || t.contains("周末")) return Days.WEEKEND
-        val m = Regex("(週|周|星期|禮拜)([一二三四五六日天、和跟,]+)").find(t) ?: return 0
+    private const val WEEK = "(?:週|周|星期|禮拜)"
+    private const val DAY = "[一二三四五六日天]"
+
+    /** 「週一到週五」「禮拜一至五」 */
+    private val DAY_RANGE = Regex("$WEEK($DAY)(?:到|至|~|～|-)$WEEK?($DAY)")
+
+    /** 「禮拜一、禮拜三、禮拜五」「週一週三週五」「星期二跟四」「每週一三五」；不帶前綴的星期字後面不能接時間 */
+    private val DAY_LIST = Regex("$WEEK$DAY(?:(?:、|,|和|跟|還有|與|及)?(?:$WEEK$DAY|$DAY(?![點:：0-9十百個分半刻])))*")
+
+    private fun dayIndex(c: Char) = "一二三四五六日".indexOf(if (c == '天') '日' else c)
+
+    private fun explicitDays(t: String): Int {
         var mask = 0
-        m.groupValues[2].forEach { c ->
-            val idx = when (c) {
-                '一' -> 0; '二' -> 1; '三' -> 2; '四' -> 3; '五' -> 4; '六' -> 5; '日', '天' -> 6
-                else -> -1
-            }
-            if (idx >= 0) mask = mask or (1 shl idx)
+        DAY_RANGE.findAll(t).forEach { m ->
+            val a = dayIndex(m.groupValues[1][0]); val b = dayIndex(m.groupValues[2][0])
+            if (a in 0..b) for (i in a..b) mask = mask or (1 shl i)
+        }
+        DAY_LIST.findAll(DAY_RANGE.replace(t, "|")).forEach { m ->
+            m.value.replace(Regex(WEEK), "").forEach { c -> dayIndex(c).takeIf { it >= 0 }?.let { mask = mask or (1 shl it) } }
         }
         return mask
+    }
+
+    /** 拿掉星期片語，避免「週六18:05」「星期六十一點」把星期黏進時間 */
+    private fun stripDays(t: String) = DAY_LIST.replace(DAY_RANGE.replace(t, ","), ",")
+
+    private fun parseDays(t: String): Int {
+        // 「週一到週五…啊不對，是一三五」：以更正後的說法為準
+        Regex("(?:不對|不是|更正)").findAll(t).lastOrNull()?.let { c ->
+            val after = t.substring(c.range.last + 1)
+            explicitDays(after).takeIf { it != 0 }?.let { return it }
+            Regex("是((?:$DAY[、,和跟]?){2,})").find(after)?.let { m ->
+                return m.groupValues[1].fold(0) { acc, ch -> dayIndex(ch).let { if (it >= 0) acc or (1 shl it) else acc } }
+            }
+        }
+        explicitDays(t).takeIf { it != 0 }?.let { return it }
+        if (t.contains("每天") || t.contains("每日") || t.contains("天天")) return Days.EVERYDAY
+        if (t.contains("平日") || t.contains("工作日") || t.contains("上班日")) return Days.WEEKDAYS
+        if (t.contains("週末") || t.contains("周末")) return Days.WEEKEND
+        return 0
     }
 
     // ---------- 提醒文字 ----------
