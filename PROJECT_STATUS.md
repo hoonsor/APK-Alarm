@@ -9,7 +9,7 @@
 - 發新版：改 `app/build.gradle.kts` 的 `versionCode`／`versionName` → 在下方新增 `### vX.Y.Z — 日期` 段落（會成為 Release 更新說明）→ 推送 main 與同名 `vX.Y.Z` tag。CI 會檢查 tag 與 versionName 一致、跑單元測試、編譯並發布 `HoonsorAlarm-vX.Y.Z.apk`。
 - 推送 main 會自動更新 `latest` 預先發行版（測試用，App 內更新與 Obtainium 不會追它）。
 - 手機端：App 內更新（每天開啟時自動檢查、設定頁「檢查更新」）或 Obtainium（來源 `https://github.com/hoonsor/APK-Alarm`，不要勾 prereleases）。詳細步驟見 README「手機端更新」。
-- 簽章：共用金鑰 `hoonsor-release.jks`，Secrets 由倬執行 `D:-Project-Claude使用流程改善\setup-hoonsor-signing.ps1` 寫入。**目前尚未設定**，在設定前 CI 產出的都是 debug 簽章、無法覆蓋安裝，先不要推 tag。
+- 簽章：共用金鑰 `hoonsor-release.jks`，Secrets 由倬執行 `D:-Project-Claude使用流程改善\setup-hoonsor-signing.ps1` 寫入。**2026/10/25 已設定**，CI 產出的 APK 憑證 SHA-256 開頭 `514ec00e`、結尾 `4548825`（與語音總控相同，Agent API 的 signature 權限才拿得到）。手機上若是 debug 版，第一次要先備份 → 解除安裝 → 安裝正式版 → 匯入備份。
 - 第一次從 debug 版換成正式簽章版：先備份 → 解除安裝 → 安裝正式版 → 匯入備份（只需一次）。
 
 ## 版本紀錄
