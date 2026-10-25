@@ -184,6 +184,8 @@ fun SettingsScreen(onBack: () -> Unit) {
 
             BackupCard()
 
+            AgentBenchCard()
+
             UpdateCard()
             Spacer(Modifier.height(24.dp))
         }

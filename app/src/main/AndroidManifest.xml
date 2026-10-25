@@ -25,7 +25,16 @@
     <!-- App 內自我更新：從 GitHub Releases 下載新版 APK 後交給系統安裝 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Hoonsor Agent API：只有同一把簽章（hoonsor-release.jks）的 APP 拿得到這個權限 -->
+    <permission
+        android:name="tw.hoonsor.permission.AGENT"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="tw.hoonsor.permission.AGENT" />
+
     <queries>
+        <!-- 健康檢查頁顯示語音總控是否安裝、簽章是否相同 -->
+        <package android:name="tw.hoonsor.voicehub" />
+        <package android:name="tw.hoonsor.voicehub.lab" />
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
@@ -90,6 +99,17 @@
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- Hoonsor Agent API：語音總控用 describe／execute／health 操作鬧鐘與計時器 -->
+        <provider
+            android:name=".agent.AgentProvider"
+            android:authorities="${applicationId}.agent"
+            android:exported="true"
+            android:permission="tw.hoonsor.permission.AGENT">
+            <intent-filter>
+                <action android:name="tw.hoonsor.agent.PROVIDER" />
+            </intent-filter>
         </provider>
 
         <!-- 接收 App 內更新的安裝結果（PackageInstaller session） -->

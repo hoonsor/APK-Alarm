@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.hoonsor.alarm.Graph
+import com.hoonsor.alarm.agent.AgentStatus
 import com.hoonsor.alarm.domain.Fmt
 import com.hoonsor.alarm.ringing.RingInfo
 import com.hoonsor.alarm.ringing.RingTester
@@ -45,7 +46,10 @@ import com.hoonsor.alarm.tts.TtsEngine
 import com.hoonsor.alarm.ui.common.Glyph
 import com.hoonsor.alarm.ui.common.GlyphIcon
 import com.hoonsor.alarm.ui.theme.C
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import tw.hoonsor.agent.HoonsorAgent
 
 @Composable
 fun HealthScreen(onBack: () -> Unit) {
@@ -163,6 +167,36 @@ fun HealthScreen(onBack: () -> Unit) {
                 ) { Text("立即重新排程", color = C.text) }
             }
 
+            Text("Agent API（語音總控）", color = C.muted, fontSize = 12.sp, letterSpacing = 1.sp, modifier = Modifier.padding(start = 4.dp))
+            val agent by produceState<AgentStatus.Report?>(null, refresh) { value = withContext(Dispatchers.IO) { AgentStatus.check(context) } }
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(C.surface)
+                    .border(1.dp, C.border, RoundedCornerShape(20.dp)).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                val a = agent
+                if (a == null) {
+                    Text("檢查中…", color = C.muted, fontSize = 14.sp)
+                } else {
+                    AgentRow(
+                        "API 服務", a.providerOk,
+                        if (a.providerOk) "正常 · 協定 api ${HoonsorAgent.API}／SDK ${HoonsorAgent.SDK_VERSION} · 開放 ${a.actionCount} 個動作" else "無法呼叫：${a.error}",
+                    )
+                    AgentRow(
+                        "語音總控", a.voiceHub != null,
+                        if (a.voiceHub != null) "已安裝（${a.voiceHub}）" else "沒有安裝，裝了才能用說的操作鬧鐘",
+                    )
+                    if (a.voiceHub != null) {
+                        AgentRow(
+                            "共用簽章", a.sameSignature,
+                            if (a.sameSignature) "相同，語音總控可以呼叫" else "不同，語音總控拿不到權限；兩個 APP 都要裝 GitHub 發布的正式版",
+                        )
+                    }
+                    a.healthIssues.forEach { AgentRow("提醒", false, it) }
+                    Text("語音總控「動作」頁重新掃描後會出現「倬的鬧鐘」；設定頁最下方的「API 測試台」可以直接試每個動作。", color = C.dim, fontSize = 12.sp, lineHeight = 18.sp)
+                }
+            }
+
             Text("立即測試", color = C.muted, fontSize = 12.sp, letterSpacing = 1.sp, modifier = Modifier.padding(start = 4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(
@@ -209,6 +243,17 @@ fun HealthScreen(onBack: () -> Unit) {
                 Text(if (testScheduled) "  已排定：1 分鐘後響鈴（可鎖屏測試）" else "  測試響鈴：1 分鐘後", color = C.accentSoft, fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun AgentRow(title: String, ok: Boolean, detail: String) {
+    Row(verticalAlignment = Alignment.Top) {
+        GlyphIcon(if (ok) Glyph.CheckCircle else Glyph.Warn, null, tint = if (ok) C.ok else C.warn, size = 18.dp)
+        Column(Modifier.padding(start = 8.dp)) {
+            Text(title, color = C.text, fontSize = 14.sp)
+            Text(detail, color = if (ok) C.muted else C.warnText, fontSize = 12.sp, lineHeight = 18.sp)
         }
     }
 }
