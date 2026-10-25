@@ -82,7 +82,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val PRESETS_MIN = listOf(1, 3, 5, 10, 15, 25, 45, 60)
-private val TIMER_TILE_HEIGHT = 208.dp
+/** 卡片固定高度：提醒最多 2 行＋剩餘時間＋響鈴（1 行）＋總時長（1 行）＋進度條＋按鈕 */
+private val TIMER_TILE_HEIGHT = 184.dp
 
 /** 計時器多選狀態；由 MainActivity 持有，選取時底部導覽列換成批次操作列 */
 class TimerSelection {
@@ -113,9 +114,14 @@ private enum class TimerSort(val key: String, val label: String, val short: Stri
 fun TimerScreen(selection: TimerSelection, onVoice: () -> Unit, onDeleted: (List<TimerEntity>) -> Unit) {
     val context = LocalContext.current
     val timersFlow = remember { Graph.db.timerDao().observeAll() }
-    val timers by timersFlow.collectAsState(initial = emptyList())
+    // 初始值用 null（還沒讀到）而不是空清單：先用空清單畫出畫面的話，資料讀進來後卡片會插在表單上方，
+    // 清單卻停在表單的位置，一打開計時器頁就看不到卡片
+    val timersOrNull by timersFlow.collectAsState(initial = null)
+    val timers = timersOrNull.orEmpty()
     val groupsFlow = remember { Graph.db.timerGroupDao().observeAll() }
-    val groups by groupsFlow.collectAsState(initial = emptyList())
+    val groupsOrNull by groupsFlow.collectAsState(initial = null)
+    val groups = groupsOrNull.orEmpty()
+    val loaded = timersOrNull != null && groupsOrNull != null
     val scope = rememberCoroutineScope()
     val repo = Graph.repo
     val boot = remember { AlarmScheduler.bootCount(context) }
@@ -148,9 +154,10 @@ fun TimerScreen(selection: TimerSelection, onVoice: () -> Unit, onDeleted: (List
     /** 新增群組對話框；true = 建立後自動選為新計時器的群組 */
     var newGroupDialog by remember { mutableStateOf<Boolean?>(null) }
     val groupIds = groups.map { it.id }.toSet()
-    LaunchedEffect(groupIds) { if (newGroupId != -1L && newGroupId !in groupIds) newGroupId = -1L }
+    LaunchedEffect(loaded, groupIds) { if (loaded && newGroupId != -1L && newGroupId !in groupIds) newGroupId = -1L }
     // 被刪掉的計時器自動移出選取
     LaunchedEffect(timers) {
+        if (!loaded) return@LaunchedEffect
         val alive = timers.map { it.id }.toSet()
         selection.ids.filter { it !in alive }.forEach { selection.toggle(it) }
     }
@@ -215,7 +222,7 @@ fun TimerScreen(selection: TimerSelection, onVoice: () -> Unit, onDeleted: (List
             }
         }
 
-        LazyVerticalGrid(
+        if (loaded) LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -671,12 +678,17 @@ private fun TimerCard(
             GlyphIcon(Glyph.Bell, null, tint = if (running) C.accentSoft else C.dim, size = 12.dp, modifier = Modifier.padding(top = 2.dp))
             Text(
                 " " + (ringText ?: status), color = if (running) C.accentSoft else C.muted, fontSize = 12.sp, lineHeight = 16.sp,
-                maxLines = 2, overflow = TextOverflow.Ellipsis,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
+        // 一行放得下：有響鈴時刻時狀態已經看得出來（「繼續則」＝暫停中），改放「一次性」
         Text(
-            (if (t.autoDelete) "一次性 · " else "") + (if (ringText != null) "$status · " else "") + "共 ${Fmt.duration(t.durationMs)}",
-            color = C.dim, fontSize = 11.sp, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            when {
+                t.autoDelete -> "一次性 · "
+                ringText != null -> "$status · "
+                else -> ""
+            } + "共 ${Fmt.duration(t.durationMs)}",
+            color = C.dim, fontSize = 11.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.weight(1f))
         Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color(0xFF262C3A))) {
