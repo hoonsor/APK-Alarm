@@ -55,6 +55,7 @@ import com.hoonsor.alarm.domain.TimerEdit
 import com.hoonsor.alarm.scheduler.AlarmScheduler
 import com.hoonsor.alarm.ui.common.Glyph
 import com.hoonsor.alarm.ui.common.GlyphIcon
+import com.hoonsor.alarm.ui.common.MiniSwitch
 import com.hoonsor.alarm.ui.common.textFieldColors
 import com.hoonsor.alarm.ui.theme.C
 import kotlinx.coroutines.delay
@@ -155,19 +156,17 @@ fun DurationWheels(ms: Long, onChange: (Long) -> Unit) {
     }
 }
 
-/** 快速增加時間：+1 / +5 / +10 / +30 分、+1 時，以及自訂分鐘 */
+private val QUICK_MINUTES = listOf(1, 5, 10, 30, 60)
+
+/** 快速增加時間：+1 / +5 / +10 / +30 分、+1 時，以及自訂分鐘；withSubtract = true 時下方多一排 −1 分 … −1 時 */
 @Composable
-fun AddTimeRow(ms: Long, onChange: (Long) -> Unit) {
+fun AddTimeRow(ms: Long, withSubtract: Boolean = false, onChange: (Long) -> Unit) {
     var custom by remember { mutableStateOf("") }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("+1 分" to 1, "+5 分" to 5, "+10 分" to 10, "+30 分" to 30, "+1 時" to 60).forEach { (label, min) ->
-                Box(
-                    Modifier.weight(1f).height(38.dp).clip(RoundedCornerShape(10.dp)).background(C.field)
-                        .clickable { onChange((ms + min * 60_000L).coerceAtMost(MAX_MS)) },
-                    contentAlignment = Alignment.Center,
-                ) { Text(label, color = C.textSoft, fontSize = 12.sp, maxLines = 1) }
-            }
+        QuickTimeButtons("+") { min -> onChange((ms + min * 60_000L).coerceAtMost(MAX_MS)) }
+        if (withSubtract) {
+            // 減到不足 1 秒時停在 1 秒（執行中的計時器＝馬上就響），不會變成 0 而無法儲存
+            QuickTimeButtons("−") { min -> onChange((ms - min * 60_000L).coerceAtLeast(minOf(ms, 1_000L))) }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("增加", color = C.muted, fontSize = 13.sp)
@@ -190,19 +189,49 @@ fun AddTimeRow(ms: Long, onChange: (Long) -> Unit) {
     }
 }
 
+@Composable
+private fun QuickTimeButtons(sign: String, onMinutes: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        QUICK_MINUTES.forEach { min ->
+            val label = sign + if (min == 60) "1 時" else "$min 分"
+            Box(
+                Modifier.weight(1f).height(38.dp).clip(RoundedCornerShape(10.dp)).background(C.field)
+                    .clickable(onClickLabel = if (sign == "+") "增加" else "減少") { onMinutes(min) },
+                contentAlignment = Alignment.Center,
+            ) { Text(label, color = C.textSoft, fontSize = 12.sp, maxLines = 1) }
+        }
+    }
+}
+
+/** 一次性開關：響完（按停止或響太久自動停止）就自動刪除這個計時器 */
+@Composable
+fun OneShotRow(checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "切換一次性") { onChange(!checked) }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("一次性", color = C.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text("響完就自動刪除，不留在清單裡（貪睡時不刪）", color = C.muted, fontSize = 12.sp)
+        }
+        MiniSwitch(checked, { onChange(!checked) }, contentDescription = "一次性計時器")
+    }
+}
+
 /**
  * 響鈴時刻提示。
  * fixedAt = null：「現在開始的話 14:35:20 響」，以現在時間＋時長計算（還沒開始的計時器，晚按開始就晚響，所以會跟著時間走）。
  * fixedAt ≠ null：執行中的計時器，直接顯示固定的響鈴時刻，不會隨畫面停留時間漂移。
  */
 @Composable
-fun RingAtLine(ms: Long, prefix: String = "現在開始的話", fixedAt: Long? = null) {
+fun RingAtLine(ms: Long, prefix: String = "現在開始的話", fixedAt: Long? = null, seconds: Boolean = true) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(500) } }
     Row(verticalAlignment = Alignment.CenterVertically) {
         GlyphIcon(Glyph.Bell, null, tint = C.accentSoft, size = 14.dp)
         Text(
-            if (ms > 0) "  $prefix ${ringAt(fixedAt ?: (now + ms), now)} 響鈴" else "  請設定時間",
+            if (ms > 0) "  $prefix ${ringAt(fixedAt ?: (now + ms), now, seconds)} 響鈴" else "  請設定時間",
             color = C.accentSoft, fontSize = 14.sp,
         )
     }
@@ -224,6 +253,7 @@ fun TimerEditDialog(timer: TimerEntity, onDismiss: () -> Unit) {
     }
     var ms by remember(timer.id) { mutableLongStateOf(initial) }
     var label by remember(timer.id) { mutableStateOf(timer.label) }
+    var oneShot by remember(timer.id) { mutableStateOf(timer.autoDelete) }
     val running = timer.state == TimerState.RUNNING
     /**
      * 執行中的計時器怎麼套用修改：
@@ -252,22 +282,24 @@ fun TimerEditDialog(timer: TimerEntity, onDismiss: () -> Unit) {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (running) {
                     Text("目前剩下 ${Fmt.duration(liveRemaining)}（計時繼續進行）", color = C.textSoft, fontSize = 13.sp)
-                    Text("轉滾輪設定儲存後要剩下多少時間，或按「+N 分」加時間", color = C.muted, fontSize = 12.sp)
+                    Text("轉滾輪設定儲存後要剩下多少時間，或按「+N 分」「−N 分」增減", color = C.muted, fontSize = 12.sp)
                 } else {
                     Text("調整剩下的時間", color = C.muted, fontSize = 12.sp)
                 }
                 DurationWheels(ms) { ms = it; setByWheel = true }
-                AddTimeRow(ms) { ms = it }
+                AddTimeRow(ms, withSubtract = true) { ms = it }
+                // 編輯視窗的響鈴時刻只顯示到時:分
                 if (running && !changed) {
-                    RingAtLine(initial, "目前預計", fixedAt = openedAt + initial)
+                    RingAtLine(initial, "目前預計", fixedAt = openedAt + initial, seconds = false)
                 } else {
-                    RingAtLine(ms, if (running) "儲存的話" else "按開始的話", fixedAt = runningRingAt)
+                    RingAtLine(ms, if (running) "儲存的話" else "按開始的話", fixedAt = runningRingAt, seconds = false)
                 }
                 OutlinedTextField(
                     value = label, onValueChange = { label = it }, singleLine = true,
                     label = { Text("響鈴時顯示的提醒") },
                     shape = RoundedCornerShape(12.dp), colors = textFieldColors(), modifier = Modifier.fillMaxWidth(),
                 )
+                OneShotRow(oneShot) { oneShot = it }
                 Text("「重設」會回到最初建立的 ${Fmt.duration(timer.durationMs)}", color = C.dim, fontSize = 12.sp)
             }
         },
@@ -277,7 +309,9 @@ fun TimerEditDialog(timer: TimerEntity, onDismiss: () -> Unit) {
                 // 用 App 層級的 scope：對話框一關閉，它自己的 rememberCoroutineScope 就會被取消，
                 // 寫入資料庫會跑到一半被中斷，造成「按儲存沒有效果」
                 val byWheel = setByWheel && m != initial
+                val once = oneShot
                 Graph.appScope.launch {
+                    Graph.repo.setTimerAutoDelete(timer.id, once)
                     when {
                         !running || byWheel -> Graph.repo.editTimer(timer.id, m, l, start = true)
                         else -> Graph.repo.shiftRunningTimer(timer.id, TimerEdit.delta(initial, m), l)
@@ -290,8 +324,11 @@ fun TimerEditDialog(timer: TimerEntity, onDismiss: () -> Unit) {
             Row {
                 if (!running) {
                     TextButton(enabled = ms > 0, onClick = {
-                        val m = ms; val l = label.trim()
-                        Graph.appScope.launch { Graph.repo.editTimer(timer.id, m, l, start = false) }
+                        val m = ms; val l = label.trim(); val once = oneShot
+                        Graph.appScope.launch {
+                            Graph.repo.setTimerAutoDelete(timer.id, once)
+                            Graph.repo.editTimer(timer.id, m, l, start = false)
+                        }
                         onDismiss()
                     }) { Text("只儲存", color = C.textSoft) }
                 }

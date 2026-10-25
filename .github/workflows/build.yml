@@ -15,6 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # Agent API 相容檢查要比對最近一個 v* tag
+
+      # Hoonsor Agent API 破壞性變更檢查（規則見 hoonsor/APK-VoiceHub docs/AGENT_PROTOCOL.md）
+      - name: Agent API compatibility
+        run: python3 tools/agent_compat_check.py --git-baseline docs/agent-manifest.json
 
       - uses: actions/setup-java@v5
         with:

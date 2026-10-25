@@ -11,7 +11,8 @@ import tw.hoonsor.agent.HoonsorAgent
  */
 object AgentCatalog {
     const val APP_NAME = "倬的鬧鐘"
-    const val DESCRIPTION = "倬的鬧鐘與計時器：查詢、新增、修改、開關、略過下次、刪除鬧鐘，開關群組，開始與控制計時器。"
+    const val DESCRIPTION = "倬的鬧鐘與計時器：查詢、新增、修改、開關、略過下次、刪除鬧鐘，開關群組，開始與控制計時器。" +
+        "用語音新增的鬧鐘與計時器預設都是一次性（響完自動刪除），使用者說「固定」「重複」「常駐」「保留」時才建立會留下來的。"
 
     val TIMER_MAX_SECONDS = 99 * 3600 + 59 * 60 + 59
 
@@ -21,7 +22,7 @@ object AgentCatalog {
     fun actions(): List<JSONObject> = listOf(
         HoonsorAgent.action(
             "alarm_list", "查詢鬧鐘",
-            "列出鬧鐘（id、時間、重複、名稱、開關、群組、下次響鈴、是否略過下次）與鬧鐘群組；只查詢不修改。要操作某個鬧鐘前，可先用這個取得 id",
+            "列出鬧鐘（id、時間、重複、名稱、開關、群組、下次響鈴、是否略過下次、是否一次性）與鬧鐘群組；只查詢不修改。要操作某個鬧鐘前，可先用這個取得 id",
             "read",
             obj(
                 "query" to str("只列出名稱、群組或時間符合的鬧鐘，例如「上班」「07:00」"),
@@ -33,7 +34,7 @@ object AgentCatalog {
         ),
         HoonsorAgent.action(
             "alarm_create", "新增鬧鐘",
-            "在倬的鬧鐘新增一個鬧鐘。沒給 repeat 也沒給 days 時只響一次；只響一次的鬧鐘可用 date 指定日期。group 不存在時會自動建立",
+            "在倬的鬧鐘新增一個鬧鐘。沒給 repeat 也沒給 days 時只響一次；只響一次的鬧鐘可用 date 指定日期，而且預設是一次性（響完自動刪除）。group 不存在時會自動建立",
             "reversible",
             obj(
                 "hour" to int("時，0–23（24 小時制）", 0, 23),
@@ -43,9 +44,13 @@ object AgentCatalog {
                 "date" to str("只響一次時的日期：today、tomorrow、day_after_tomorrow，或 YYYY-MM-DD；不給就是下一個到達的時間"),
                 "memo" to str("鬧鐘名稱或提醒內容，例如「上班」「吃藥」"),
                 "group" to str("放進這個鬧鐘群組（名稱）"),
+                "auto_delete" to bool(AUTO_DELETE_ALARM),
                 required = listOf("hour"),
             ),
-            listOf("明天早上七點叫我", "平日六點半的鬧鐘，名稱叫上班", "設一個每天晚上十點提醒我吃藥的鬧鐘", "週六週日九點叫我，放到假日群組"),
+            listOf(
+                "明天早上七點叫我", "平日六點半的鬧鐘，名稱叫上班", "設一個每天晚上十點提醒我吃藥的鬧鐘", "週六週日九點叫我，放到假日群組",
+                "幫我設一個固定的明天八點鬧鐘，響完不要刪",
+            ),
         ),
         HoonsorAgent.action(
             "alarm_update", "修改鬧鐘",
@@ -59,9 +64,10 @@ object AgentCatalog {
                 "days" to daysParam(),
                 "memo" to str("新的名稱或提醒內容"),
                 "group" to str("移到這個群組（名稱，不存在就建立）；空字串＝移出群組"),
+                "auto_delete" to bool("true＝改成一次性（響完自動刪除，只對只響一次的鬧鐘有效）、false＝響完保留"),
                 withAll = false,
             ),
-            listOf("把上班的鬧鐘改成七點十五", "七點那個鬧鐘改成只有週一到週三", "把吃藥鬧鐘的名稱改成吃維他命"),
+            listOf("把上班的鬧鐘改成七點十五", "七點那個鬧鐘改成只有週一到週三", "把吃藥鬧鐘的名稱改成吃維他命", "明天八點的鬧鐘響完要留著"),
         ),
         HoonsorAgent.action(
             "alarm_toggle", "開關鬧鐘",
@@ -98,22 +104,23 @@ object AgentCatalog {
         ),
         HoonsorAgent.action(
             "timer_list", "查詢計時器",
-            "列出計時器（id、名稱、剩餘時間、狀態、群組、幾點響）；只查詢不修改",
+            "列出計時器（id、名稱、剩餘時間、狀態、群組、幾點響、是否一次性）；只查詢不修改",
             "read",
             obj("query" to str("只列出名稱或群組符合的計時器")),
             listOf("計時器還剩多久", "煮麵的計時器剩幾分鐘", "現在有哪些計時器在跑"),
         ),
         HoonsorAgent.action(
             "timer_start", "開始計時",
-            "在倬的鬧鐘新增一個計時器並立刻開始倒數。要暫停、繼續或重設既有的計時器請用 timer_control",
+            "在倬的鬧鐘新增一個計時器並立刻開始倒數，預設是一次性（響完自動刪除）。要暫停、繼續或重設既有的計時器請用 timer_control",
             "reversible",
             obj(
                 "seconds" to int("倒數秒數，1–359999（例如 10 分鐘＝600）", 1, TIMER_MAX_SECONDS),
                 "label" to str("計時器名稱，例如「煮麵」"),
                 "group" to str("放進這個計時器群組（名稱，不存在就建立）"),
+                "auto_delete" to bool(AUTO_DELETE_TIMER),
                 required = listOf("seconds"),
             ),
-            listOf("計時十分鐘", "煮麵計時三分鐘", "一個半小時後提醒我，叫做洗衣服"),
+            listOf("計時十分鐘", "煮麵計時三分鐘", "一個半小時後提醒我，叫做洗衣服", "設一個常駐的二十五分鐘番茄鐘計時器"),
         ),
         HoonsorAgent.action(
             "timer_control", "控制計時器",
@@ -134,6 +141,12 @@ object AgentCatalog {
             listOf("刪掉煮麵的計時器", "把所有計時器都刪除"),
         ),
     )
+
+    private const val KEEP_WORDS = "使用者明確說「固定」「重複」「常駐」「保留」「響完不要刪」時才給 false"
+    private const val AUTO_DELETE_ALARM =
+        "一次性：true＝響完（按停止或響太久自動停止）就自動刪除，只對只響一次的鬧鐘有效。沒給時：只響一次的鬧鐘預設 true，重複鬧鐘一律保留。$KEEP_WORDS"
+    private const val AUTO_DELETE_TIMER =
+        "一次性：true＝響完（按停止或響太久自動停止）就自動刪除。沒給時預設 true。$KEEP_WORDS；false＝響完回到原本時長，留在清單裡"
 
     // ---------- JSON Schema 小工具 ----------
 

@@ -66,6 +66,7 @@ class AlarmsViewModel : ViewModel() {
     fun setSilent(id: Long) = launch { repo.updateAlarm(id, "響鈴方式") { it.copy(silent = true, speakMemo = false) } }
     fun setVolume(id: Long, volume: Int?) = launch { repo.updateAlarm(id, "音量") { it.copy(volume = volume?.coerceIn(10, 100)) } }
     fun setSpeakOnce(id: Long, once: Boolean) = launch { repo.updateAlarm(id, "單次語音") { it.copy(speakOnceThenRing = once) } }
+    fun setAutoDelete(id: Long, autoDelete: Boolean) = launch { repo.updateAlarm(id, "一次性") { it.copy(autoDelete = autoDelete) } }
     fun setVibrate(id: Long, vibrate: Boolean) = launch { repo.updateAlarm(id, "震動") { it.copy(vibrate = vibrate) } }
 
     fun add() = launch {

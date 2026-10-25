@@ -18,6 +18,7 @@ import androidx.room.PrimaryKey
  * silent：純震動鬧鐘，不播放任何聲音（鈴聲與語音都不播）。
  * skipUntil：「略過下次」—被略過的那一次響鈴時間（epoch ms）；這個時間（含）之前的響鈴都不排，之後恢復正常。
  * ttsCachePath / ttsCacheKey：雲端預先產生的語音檔與它對應的內容；內容不符時改用手機內建語音。
+ * autoDelete：一次性鬧鐘，響完（按停止或響太久自動停止）就自動刪除；只對只響一次的鬧鐘有效，貪睡時不刪。
  */
 @Entity(tableName = "alarms")
 data class AlarmEntity(
@@ -42,6 +43,7 @@ data class AlarmEntity(
     val skipUntil: Long? = null,
     val ttsCachePath: String? = null,
     val ttsCacheKey: String? = null,
+    @ColumnInfo(defaultValue = "0") val autoDelete: Boolean = false,
 )
 
 /**
@@ -66,6 +68,7 @@ data class AlarmGroupEntity(
  * 重新開機後 elapsedRealtime 歸零，改用 endAtWall。
  * groupId：所屬計時器群組；null 代表未分組。
  * pausedByGroup：因為群組被關閉而暫停；群組重新開啟時只繼續這些計時器。
+ * autoDelete：一次性計時器，響完（按停止或響太久自動停止）就自動刪除；貪睡時不刪。
  */
 @Entity(tableName = "timers")
 data class TimerEntity(
@@ -80,6 +83,7 @@ data class TimerEntity(
     val createdAt: Long = System.currentTimeMillis(),
     val groupId: Long? = null,
     @ColumnInfo(defaultValue = "0") val pausedByGroup: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val autoDelete: Boolean = false,
 )
 
 /**
@@ -112,6 +116,9 @@ fun nextGroupColor(used: List<Int>): Int =
     (0 until GROUP_COLOR_COUNT).minBy { c -> used.count { it == c } * GROUP_COLOR_COUNT + c }
 
 enum class TimerState { RUNNING, PAUSED, RINGING, DONE }
+
+/** 一次性鬧鐘：響完會自動刪除（重複鬧鐘不適用） */
+val AlarmEntity.deletesAfterRing: Boolean get() = autoDelete && daysMask == 0
 
 /** 是否正在「略過下次」（被略過的那一次還沒過） */
 fun AlarmEntity.isSkipping(nowMs: Long): Boolean = daysMask != 0 && skipUntil != null && skipUntil > nowMs

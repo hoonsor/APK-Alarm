@@ -339,6 +339,9 @@ class RingingService : Service() {
             FireType.ALARM -> if (snoozeMs != null) {
                 val until = System.currentTimeMillis() + snoozeMs
                 repo.updateAlarm(info.id, "貪睡") { it.copy(snoozeUntil = until) }
+            } else {
+                // 一次性鬧鐘響完就刪除
+                repo.finishAlarm(info.id)
             }
             FireType.TIMER -> if (snoozeMs != null) {
                 repo.snoozeTimer(info.id, snoozeMs)

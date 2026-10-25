@@ -8,6 +8,7 @@ import com.hoonsor.alarm.data.AlarmGroupEntity
 import com.hoonsor.alarm.data.TimerEntity
 import com.hoonsor.alarm.data.TimerGroupEntity
 import com.hoonsor.alarm.data.TimerState
+import com.hoonsor.alarm.data.deletesAfterRing
 import com.hoonsor.alarm.data.isActive
 import com.hoonsor.alarm.data.isSkipping
 import com.hoonsor.alarm.domain.Days
@@ -87,6 +88,7 @@ object AlarmAgent {
             .put("group", a.groupId?.let { groups[it]?.name } ?: JSONObject.NULL)
             .put("skipping_next", a.isSkipping(nowMs))
             .put("next", next?.let { AgentLogic.whenText(it, nowMs) } ?: JSONObject.NULL)
+            .put("auto_delete", a.deletesAfterRing)
     }
 
     // ---------- 鬧鐘 ----------
@@ -130,16 +132,21 @@ object AlarmAgent {
         }
         val memo = AgentLogic.optText(p, "memo").orEmpty()
         val groupName = AgentLogic.optText(p, "group")
-        val draft = AlarmEntity(hour = hour, minute = minute, daysMask = mask, memo = memo, notBefore = notBefore)
+        // 語音新增的單次鬧鐘預設一次性（響完自動刪除）；重複鬧鐘不適用
+        val autoDelete = mask == 0 && p.optBoolean("auto_delete", true)
+        val draft = AlarmEntity(hour = hour, minute = minute, daysMask = mask, memo = memo, notBefore = notBefore, autoDelete = autoDelete)
         val nextMs = NextTrigger.nextRegular(draft, now(), zone)
         val whenText = if (mask == 0) nextMs?.let { AgentLogic.whenText(it, now()) } ?: Fmt.hm(hour, minute) else "${Days.summary(mask)} ${Fmt.hm(hour, minute)}"
-        val what = whenText + (if (memo.isNotEmpty()) "「$memo」" else "") + "的鬧鐘" + (groupName?.let { "（放在$it 群組）" }.orEmpty())
+        val what = whenText + (if (memo.isNotEmpty()) "「$memo」" else "") + (if (autoDelete) "的一次性鬧鐘" else "的鬧鐘") +
+            (groupName?.let { "（放在$it 群組）" }.orEmpty())
         if (dryRun) return HoonsorAgent.ok("（試跑）會新增$what")
 
         val groupId = groupName?.let { repo.findOrCreateGroup(it) }
         val id = repo.addAlarm(draft.copy(groupId = groupId))
         val data = JSONObject().put("id", id).put("next", nextMs?.let { AgentLogic.whenText(it, now()) } ?: JSONObject.NULL)
-        return HoonsorAgent.ok("已新增$what。", data, "alarm_delete", JSONObject().put("ids", JSONArray(listOf(id))))
+        data.put("auto_delete", autoDelete)
+        val note = if (autoDelete) "，響完會自動刪除" else ""
+        return HoonsorAgent.ok("已新增$what$note。", data, "alarm_delete", JSONObject().put("ids", JSONArray(listOf(id))))
     }
 
     private suspend fun alarmUpdate(p: JSONObject, dryRun: Boolean): JSONObject {
@@ -156,15 +163,20 @@ object AlarmAgent {
         val groupChange = p.has("group") && !p.isNull("group")
         val groupName = if (groupChange) p.optString("group").trim() else null
         val timeChanged = hour != a.hour || minute != a.minute || mask != a.daysMask
-        if (!timeChanged && memo == a.memo && !groupChange) {
+        val autoDelete = if (p.has("auto_delete") && !p.isNull("auto_delete")) p.getBoolean("auto_delete") else a.autoDelete
+        if (p.optBoolean("auto_delete", false) && mask != 0) {
+            return HoonsorAgent.fail(HoonsorAgent.INVALID_PARAMS, "重複的鬧鐘不能設成一次性，要改成只響一次嗎？")
+        }
+        val autoChanged = autoDelete != a.autoDelete
+        if (!timeChanged && memo == a.memo && !groupChange && !autoChanged) {
             return HoonsorAgent.fail(HoonsorAgent.INVALID_PARAMS, "要把「${AgentLogic.alarmLabel(a, groups)}」改成什麼？")
         }
-        val after = a.copy(hour = hour, minute = minute, daysMask = mask, memo = memo)
-        val label = AgentLogic.alarmLabel(after, groups)
+        val after = a.copy(hour = hour, minute = minute, daysMask = mask, memo = memo, autoDelete = autoDelete)
+        val label = AgentLogic.alarmLabel(after, groups) + if (after.deletesAfterRing) "（一次性）" else ""
         if (dryRun) return HoonsorAgent.ok("（試跑）會把「${AgentLogic.alarmLabel(a, groups)}」改成「$label」")
 
         repo.updateAlarm(a.id, "語音總控修改") { cur ->
-            cur.copy(hour = hour, minute = minute, daysMask = mask, memo = memo, enabled = if (timeChanged) true else cur.enabled)
+            cur.copy(hour = hour, minute = minute, daysMask = mask, memo = memo, autoDelete = autoDelete, enabled = if (timeChanged) true else cur.enabled)
         }
         if (groupChange) {
             val gid = groupName?.takeIf { it.isNotEmpty() }?.let { repo.findOrCreateGroup(it) }
@@ -172,6 +184,7 @@ object AlarmAgent {
         }
         val undo = JSONObject().put("ids", JSONArray(listOf(a.id))).put("hour", a.hour).put("minute", a.minute)
             .put("days", AgentLogic.daysArray(a.daysMask)).put("memo", a.memo)
+        if (autoChanged) undo.put("auto_delete", a.autoDelete)
         if (groupChange) undo.put("group", a.groupId?.let { groups[it]?.name } ?: "")
         return HoonsorAgent.ok("已把鬧鐘改成 $label。", JSONObject().put("id", a.id), "alarm_update", undo)
     }
@@ -312,6 +325,7 @@ object AlarmAgent {
                     .put("duration", Fmt.duration(t.durationMs))
                     .put("group", t.groupId?.let { groups[it]?.name } ?: JSONObject.NULL)
                     .put("ends_at", if (t.state == TimerState.RUNNING) AgentLogic.whenText(nowMs + rem, nowMs) else JSONObject.NULL)
+                    .put("auto_delete", t.autoDelete)
             },
         )
         val running = list.filter { it.state == TimerState.RUNNING }
@@ -333,14 +347,16 @@ object AlarmAgent {
         val label = AgentLogic.optText(p, "label").orEmpty()
         val groupName = AgentLogic.optText(p, "group")
         val ms = seconds * 1000
-        val what = (if (label.isNotEmpty()) "「$label」" else "") + AgentLogic.durationText(ms) + "的計時"
+        // 語音新增的計時器預設一次性（響完自動刪除）
+        val autoDelete = p.optBoolean("auto_delete", true)
+        val what = (if (label.isNotEmpty()) "「$label」" else "") + AgentLogic.durationText(ms) + (if (autoDelete) "的一次性計時" else "的計時")
         if (dryRun) return HoonsorAgent.ok("（試跑）會開始$what")
         val groupId = groupName?.let { repo.findOrCreateTimerGroup(it) }
-        val id = repo.startTimer(ms, label, groupId)
+        val id = repo.startTimer(ms, label, groupId, autoDelete)
         val ends = AgentLogic.whenText(now() + ms, now())
         return HoonsorAgent.ok(
-            "已開始$what，$ends 響。",
-            JSONObject().put("id", id).put("ends_at", ends),
+            "已開始$what，$ends 響" + (if (autoDelete) "，響完會自動刪除。" else "。"),
+            JSONObject().put("id", id).put("ends_at", ends).put("auto_delete", autoDelete),
             "timer_delete", JSONObject().put("ids", JSONArray(listOf(id))),
         )
     }

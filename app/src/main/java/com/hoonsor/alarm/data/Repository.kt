@@ -75,6 +75,20 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
         scheduler.rescheduleAll("復原刪除")
     }
 
+    /**
+     * 鬧鐘響完（按停止或響太久自動停止）：一次性鬧鐘直接刪除，連同不再使用的圖片、音檔與語音快取。
+     * 回傳是否刪除了。
+     */
+    suspend fun finishAlarm(id: Long): Boolean {
+        val a = alarms.get(id) ?: return false
+        if (!a.deletesAfterRing) return false
+        val removed = deleteAlarms(listOf(id))
+        purgeUnusedImages(removed.map { it.imagePath })
+        purgeUnusedSounds(removed.map { it.soundUri })
+        purgeUnusedTts(removed.map { it.ttsCachePath })
+        return true
+    }
+
     /** 復原期限過後，刪除已無任何鬧鐘使用的圖片 */
     suspend fun purgeUnusedImages(candidates: List<String?>) {
         val inUse = alarms.getAll().mapNotNull { it.imagePath }.toSet() + setOfNotNull(Graph.settings.defaultImagePath)
@@ -168,10 +182,10 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
 
     // ---------- 計時器 ----------
 
-    suspend fun startTimer(durationMs: Long, label: String, groupId: Long? = null): Long {
+    suspend fun startTimer(durationMs: Long, label: String, groupId: Long? = null, autoDelete: Boolean = false): Long {
         val gid = groupId?.takeIf { timerGroups.get(it) != null }
         gid?.let { openTimerGroupSilently(it) }
-        val t = runningCopy(TimerEntity(durationMs = durationMs, label = label, groupId = gid), durationMs)
+        val t = runningCopy(TimerEntity(durationMs = durationMs, label = label, groupId = gid, autoDelete = autoDelete), durationMs)
         val id = timers.insert(t)
         scheduler.rescheduleAll("開始計時")
         return id
@@ -215,18 +229,23 @@ class Repository(private val db: AppDatabase, private val scheduler: AlarmSchedu
     }
 
     /**
-     * 響完（按停止或響太久自動停止）：回到最初設定的時長，等下次再按開始。
+     * 響完（按停止或響太久自動停止）：一次性計時器直接刪除；其他回到最初設定的時長，等下次再按開始。
      * 已經被使用者改成別的狀態（例如響鈴時又編輯並開始）就不動。
      */
     suspend fun finishTimer(id: Long) {
         val t = timers.get(id) ?: return
         if (t.state != TimerState.RINGING && t.state != TimerState.DONE) return
-        timers.update(t.resetCopy())
+        if (t.autoDelete) timers.delete(t) else timers.update(t.resetCopy())
     }
 
-    /** 舊版留下的「已完成（0 秒）」計時器，一律回到完整時長 */
+    suspend fun setTimerAutoDelete(id: Long, autoDelete: Boolean) {
+        val t = timers.get(id) ?: return
+        if (t.autoDelete != autoDelete) timers.update(t.copy(autoDelete = autoDelete))
+    }
+
+    /** 舊版留下的「已完成（0 秒）」計時器，一律回到完整時長（一次性的直接刪除） */
     suspend fun resetFinishedTimers() {
-        timers.getAll().filter { it.state == TimerState.DONE }.forEach { timers.update(it.resetCopy()) }
+        timers.getAll().filter { it.state == TimerState.DONE }.forEach { if (it.autoDelete) timers.delete(it) else timers.update(it.resetCopy()) }
     }
 
     /** 計時器貪睡：從現在起再倒數 n 毫秒 */

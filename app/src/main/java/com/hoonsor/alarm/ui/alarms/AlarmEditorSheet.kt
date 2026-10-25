@@ -298,6 +298,19 @@ fun AlarmEditorSheet(
                 val target = if (skipping) alarm.skipUntil
                 else if (alarm.enabled && groupOn) NextTrigger.nextRegular(alarm, now) else null
                 if (alarm.daysMask == 0) {
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                            .border(1.dp, if (alarm.autoDelete) C.accent.copy(alpha = 0.6f) else C.faint, RoundedCornerShape(14.dp))
+                            .clickable(onClickLabel = "切換一次性") { vm.setAutoDelete(alarm.id, !alarm.autoDelete) }
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("一次性", color = C.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            Text("響完就自動刪除這個鬧鐘（貪睡時不刪）", color = C.muted, fontSize = 12.sp)
+                        }
+                        MiniSwitch(alarm.autoDelete, { vm.setAutoDelete(alarm.id, !alarm.autoDelete) }, contentDescription = "一次性鬧鐘")
+                    }
                     Text("只響一次的鬧鐘無法使用「略過下次」，不需要時請直接關閉。", color = C.dim, fontSize = 12.sp, lineHeight = 18.sp)
                 } else if (target != null) {
                     Row(

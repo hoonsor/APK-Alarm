@@ -132,6 +132,8 @@ fun TimerScreen(selection: TimerSelection, onVoice: () -> Unit, onDeleted: (List
 
     var pickedMs by rememberSaveable { mutableLongStateOf(Graph.settings.lastTimerMs) }
     var label by rememberSaveable { mutableStateOf("") }
+    /** 新計時器是否為一次性（響完自動刪除） */
+    var oneShot by rememberSaveable { mutableStateOf(false) }
     var keypad by remember { mutableStateOf(false) }
     var sort by remember { mutableStateOf(TimerSort.of(Graph.settings.timerSort)) }
     var sortDialog by remember { mutableStateOf(false) }
@@ -297,12 +299,15 @@ fun TimerScreen(selection: TimerSelection, onVoice: () -> Unit, onDeleted: (List
                         newGroupId = newGroupId,
                         onGroup = { newGroupId = it },
                         onNewGroup = { newGroupDialog = true },
+                        oneShot = oneShot,
+                        onOneShot = { oneShot = it },
                         onStart = {
                             val ms = pickedMs
                             val l = label.trim()
                             val gid = newGroupId.takeIf { it != -1L }
+                            val once = oneShot
                             Graph.settings.lastTimerMs = ms
-                            scope.launch { repo.startTimer(ms, l, gid) }
+                            scope.launch { repo.startTimer(ms, l, gid, autoDelete = once) }
                             label = ""
                         },
                     )
@@ -464,6 +469,8 @@ private fun NewTimerForm(
     newGroupId: Long,
     onGroup: (Long) -> Unit,
     onNewGroup: () -> Unit,
+    oneShot: Boolean,
+    onOneShot: (Boolean) -> Unit,
     onStart: () -> Unit,
 ) {
     Column(
@@ -497,7 +504,7 @@ private fun NewTimerForm(
                 }
             }
         }
-        AddTimeRow(pickedMs, onPick)
+        AddTimeRow(pickedMs, onChange = onPick)
         RingAtLine(pickedMs)
         OutlinedTextField(
             value = label, onValueChange = onLabel, singleLine = true,
@@ -517,6 +524,7 @@ private fun NewTimerForm(
             groups.forEach { g -> PickChip(g.name, newGroupId == g.id, g.color) { onGroup(g.id) } }
             PickChip("＋ 新群組", false, null, onNewGroup)
         }
+        OneShotRow(oneShot, onOneShot)
         Button(
             onClick = onStart,
             modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -652,10 +660,11 @@ private fun TimerCard(
             Fmt.duration(remaining), fontSize = 23.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
             color = if (running) C.text else C.muted,
         )
-        // 幾點響：執行中＝實際響鈴時刻；暫停中＝現在按繼續的話幾點響
+        // 幾點響（只到時:分）：執行中＝實際響鈴時刻；暫停在中途＝現在按繼續的話幾點響；還沒開始的不顯示
+        val notStarted = t.state == TimerState.PAUSED && kotlin.math.abs(remaining - t.durationMs) <= 999
         val ringText = when {
-            running -> "${ringAt(nowWall + remaining, nowWall)} 響"
-            t.state == TimerState.PAUSED && remaining > 0 -> "繼續則 ${ringAt(nowWall + remaining, nowWall)} 響"
+            running -> "${ringAt(nowWall + remaining, nowWall, seconds = false)} 響"
+            t.state == TimerState.PAUSED && remaining > 0 && !notStarted -> "繼續則 ${ringAt(nowWall + remaining, nowWall, seconds = false)} 響"
             else -> null
         }
         Row {
@@ -666,7 +675,7 @@ private fun TimerCard(
             )
         }
         Text(
-            (if (ringText != null) "$status · " else "") + "共 ${Fmt.duration(t.durationMs)}",
+            (if (t.autoDelete) "一次性 · " else "") + (if (ringText != null) "$status · " else "") + "共 ${Fmt.duration(t.durationMs)}",
             color = C.dim, fontSize = 11.sp, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.weight(1f))
@@ -712,12 +721,12 @@ private fun RoundBtn(glyph: Glyph, label: String, filled: Boolean, onClick: () -
     ) { GlyphIcon(glyph, label, tint = if (filled) C.onAccent else tint, size = 16.dp) }
 }
 
-/** 響鈴時刻：今天顯示 14:35:20；跨日加「明天」或日期 */
-internal fun ringAt(at: Long, now: Long): String {
+/** 響鈴時刻：今天顯示 14:35:20（seconds = false 時 14:35）；跨日加「明天」或日期 */
+internal fun ringAt(at: Long, now: Long, seconds: Boolean = true): String {
     val zone = java.time.ZoneId.systemDefault()
     val t = java.time.Instant.ofEpochMilli(at).atZone(zone)
     val days = java.time.temporal.ChronoUnit.DAYS.between(java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate(), t.toLocalDate())
-    val time = "%02d:%02d:%02d".format(t.hour, t.minute, t.second)
+    val time = if (seconds) "%02d:%02d:%02d".format(t.hour, t.minute, t.second) else "%02d:%02d".format(t.hour, t.minute)
     return when (days) {
         0L -> time
         1L -> "明天 $time"

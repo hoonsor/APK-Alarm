@@ -5,6 +5,7 @@ import com.hoonsor.alarm.data.AlarmEntity
 import com.hoonsor.alarm.data.AlarmGroupEntity
 import com.hoonsor.alarm.data.TimerEntity
 import com.hoonsor.alarm.data.TimerState
+import com.hoonsor.alarm.data.deletesAfterRing
 import com.hoonsor.alarm.domain.Days
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -158,5 +159,26 @@ class AgentLogicTest {
         assertFalse("換了對象就無效", ConfirmTokens.consume(other, "alarm_delete:11", nowMs = 2_000))
         val old = ConfirmTokens.issue("alarm_delete:10", nowMs = 1_000)
         assertFalse("過期", ConfirmTokens.consume(old, "alarm_delete:10", nowMs = 200_000))
+    }
+}
+
+/** 一次性（響完自動刪除）：語音新增預設開啟，參數為選填 */
+class AutoDeleteTest {
+    private fun params(action: String) =
+        AgentCatalog.actions().first { it.getString("name") == action }.getJSONObject("params")
+
+    @Test fun autoDeleteIsOptionalParam() {
+        listOf("alarm_create", "alarm_update", "timer_start").forEach { a ->
+            val p = params(a)
+            assertEquals("$a 要有 auto_delete", "boolean", p.getJSONObject("properties").getJSONObject("auto_delete").getString("type"))
+            val required = p.optJSONArray("required")?.let { r -> (0 until r.length()).map { r.getString(it) } }.orEmpty()
+            assertFalse("$a 的 auto_delete 必須是選填", "auto_delete" in required)
+        }
+    }
+
+    @Test fun onlyOneTimeAlarmsDeleteAfterRing() {
+        assertTrue(AlarmEntity(hour = 7, minute = 0, autoDelete = true).deletesAfterRing)
+        assertFalse(AlarmEntity(hour = 7, minute = 0, daysMask = Days.WEEKDAYS, autoDelete = true).deletesAfterRing)
+        assertFalse(AlarmEntity(hour = 7, minute = 0).deletesAfterRing)
     }
 }

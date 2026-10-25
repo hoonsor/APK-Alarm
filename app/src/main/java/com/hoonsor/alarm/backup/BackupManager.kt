@@ -110,7 +110,8 @@ object BackupManager {
                             .putOpt("sound", mediaRef(a.soundUri, SND_PREFIX))
                             .putOpt("volume", a.volume)
                             .put("vibrate", a.vibrate).put("speakMemo", a.speakMemo)
-                            .put("speakOnceThenRing", a.speakOnceThenRing).put("silent", a.silent),
+                            .put("speakOnceThenRing", a.speakOnceThenRing).put("silent", a.silent)
+                            .put("autoDelete", a.autoDelete),
                     )
                 }
             })
@@ -120,7 +121,8 @@ object BackupManager {
                         JSONObject()
                             .put("label", t.label).put("durationMs", t.durationMs)
                             .put("remainingMs", liveRemaining(t)).put("createdAt", t.createdAt)
-                            .putOpt("groupId", t.groupId),
+                            .putOpt("groupId", t.groupId)
+                            .put("autoDelete", t.autoDelete),
                     )
                 }
             })
@@ -272,6 +274,7 @@ object BackupManager {
                         volume = if (a.has("volume")) a.optInt("volume").coerceIn(10, 100) else null,
                         vibrate = a.optBoolean("vibrate", true), speakMemo = a.optBoolean("speakMemo"),
                         speakOnceThenRing = a.optBoolean("speakOnceThenRing", true), silent = a.optBoolean("silent"),
+                        autoDelete = a.optBoolean("autoDelete"),
                     ),
                 )
                 alarmCount++
@@ -286,6 +289,7 @@ object BackupManager {
                         remainingMs = t.optLong("remainingMs", dur).coerceIn(minOf(1_000L, dur), dur),
                         createdAt = t.optLong("createdAt", System.currentTimeMillis()),
                         groupId = if (t.has("groupId")) tgMap[t.optLong("groupId")] else null,
+                        autoDelete = t.optBoolean("autoDelete"),
                     ),
                 )
                 timerCount++

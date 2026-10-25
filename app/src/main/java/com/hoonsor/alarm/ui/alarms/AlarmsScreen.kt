@@ -474,7 +474,10 @@ private fun AlarmTile(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (alarm.daysMask == 0) {
-                    Text("單次", fontSize = 11.sp, color = C.muted, maxLines = 1, softWrap = false)
+                    Text(
+                        if (alarm.autoDelete) "一次性" else "單次", fontSize = 11.sp, maxLines = 1, softWrap = false,
+                        color = if (alarm.autoDelete && on) C.accentSoft else C.muted,
+                    )
                 } else {
                     Days.LABELS.forEachIndexed { i, l ->
                         val act = Days.has(alarm.daysMask, i)

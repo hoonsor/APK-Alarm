@@ -153,7 +153,7 @@ interface TimerGroupDao {
 
 @Database(
     entities = [AlarmEntity::class, TimerEntity::class, AlarmGroupEntity::class, TimerGroupEntity::class],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -232,9 +232,17 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v8：一次性（響完自動刪除）的鬧鐘與計時器 */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `alarms` ADD COLUMN `autoDelete` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `timers` ADD COLUMN `autoDelete` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "alarm.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .build()
     }
 }
