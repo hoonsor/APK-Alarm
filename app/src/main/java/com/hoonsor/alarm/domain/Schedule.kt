@@ -99,6 +99,17 @@ object TimerEdit {
         (currentRemaining + delta).coerceIn(1_000L, MAX_MS)
 }
 
+/** 計時器「進行中 → 未開始」排序的狀態順序（JVM 單元測試覆蓋） */
+object TimerOrder {
+    /** 0 響鈴中、1 進行中、2 暫停在中途、3 未開始（完整時長）、4 已完成 */
+    fun stateRank(t: TimerEntity, remaining: Long): Int = when (t.state) {
+        TimerState.RINGING -> 0
+        TimerState.RUNNING -> 1
+        TimerState.PAUSED -> if (kotlin.math.abs(remaining - t.durationMs) <= 999) 3 else 2
+        TimerState.DONE -> 4
+    }
+}
+
 /**
  * 滾輪的索引計算（JVM 單元測試覆蓋）。
  * 循環滾輪用「重複很多圈」的清單模擬頭尾相接：從中間那圈開始，實際上滑不到盡頭。

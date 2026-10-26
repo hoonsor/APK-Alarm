@@ -15,6 +15,10 @@ object C {
     val border = Color(0xFF232836)
     val borderHi = Color(0xFF343B4D)
     val chipBorder = Color(0xFF3A4152)
+    /** 鬧鐘、計時器卡片：比背景亮一階、框線再亮一階，才看得出卡片範圍（原本用 surface／border 幾乎和背景同色） */
+    val card = Color(0xFF1B2130)
+    val cardOpen = Color(0xFF242B3D)
+    val cardBorder = Color(0xFF3A4359)
     val text = Color(0xFFECEFF4)
     val textSoft = Color(0xFFC9CFDB)
     val muted = Color(0xFF9AA3B5)

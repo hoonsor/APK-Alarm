@@ -431,13 +431,13 @@ private fun AlarmTile(
     val shape = RoundedCornerShape(18.dp)
     val bg = when {
         selected -> Color(0xFF221F1A)
-        open -> C.surfaceHi
-        else -> C.surface
+        open -> C.cardOpen
+        else -> C.card
     }
     val borderColor = when {
         selected -> C.accent
         open -> C.accent.copy(alpha = 0.6f)
-        else -> C.border
+        else -> C.cardBorder
     }
     Box(
         Modifier.height(TILE_HEIGHT)
@@ -450,7 +450,7 @@ private fun AlarmTile(
                 when {
                     selected -> borderColor
                     skipping -> C.skip
-                    groupColor != null && !open -> GroupColors.of(groupColor).copy(alpha = 0.28f)
+                    groupColor != null && !open -> GroupColors.border(groupColor)
                     else -> borderColor
                 },
                 shape,

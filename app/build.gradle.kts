@@ -17,8 +17,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // 發新版：改這兩行後 push vX.Y.Z tag（tag 必須與 versionName 相同，CI 會檢查）
-        versionCode = 20
-        versionName = "0.12.2"
+        versionCode = 21
+        versionName = "0.12.3"
     }
 
     signingConfigs {

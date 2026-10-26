@@ -68,6 +68,7 @@ import com.hoonsor.alarm.data.TimerState
 import com.hoonsor.alarm.data.color
 import com.hoonsor.alarm.domain.Fmt
 import com.hoonsor.alarm.domain.NextTrigger
+import com.hoonsor.alarm.domain.TimerOrder
 import com.hoonsor.alarm.scheduler.AlarmScheduler
 import com.hoonsor.alarm.ui.common.ChoiceDialog
 import com.hoonsor.alarm.ui.common.ChoiceItem
@@ -98,6 +99,7 @@ class TimerSelection {
 }
 
 private enum class TimerSort(val key: String, val label: String, val short: String) {
+    STATE("state", "進行中 → 未開始", "進行中優先"),
     REMAINING_ASC("remaining_asc", "剩餘時間：短 → 長", "剩餘時間 ↑"),
     REMAINING_DESC("remaining_desc", "剩餘時間：長 → 短", "剩餘時間 ↓"),
     CREATED_DESC("created_desc", "建立時間：新 → 舊", "建立時間 ↓"),
@@ -167,6 +169,7 @@ fun TimerScreen(selection: TimerSelection, onVoice: () -> Unit, onDeleted: (List
 
     fun remainingOf(t: TimerEntity) = NextTrigger.timerRemaining(t, nowWall, nowElapsed, boot)
     fun sorted(list: List<TimerEntity>): List<TimerEntity> = when (sort) {
+        TimerSort.STATE -> list.sortedWith(compareBy({ TimerOrder.stateRank(it, remainingOf(it)) }, { remainingOf(it) }))
         TimerSort.REMAINING_ASC -> list.sortedBy { remainingOf(it) }
         TimerSort.REMAINING_DESC -> list.sortedByDescending { remainingOf(it) }
         TimerSort.CREATED_DESC -> list.sortedByDescending { it.createdAt }
@@ -644,14 +647,14 @@ private fun TimerCard(
     }
     Column(
         Modifier.height(TIMER_TILE_HEIGHT).clip(shape)
-            .background(if (selected) Color(0xFF221F1A) else C.surface)
+            .background(if (selected) Color(0xFF221F1A) else C.card)
             .then(if (groupColor != null && !selected) Modifier.background(GroupColors.tile(groupColor)) else Modifier)
             .border(
                 if (selected) 2.dp else 1.dp,
                 when {
                     selected -> C.accent
-                    groupColor != null -> GroupColors.of(groupColor).copy(alpha = 0.28f)
-                    else -> C.border
+                    groupColor != null -> GroupColors.border(groupColor)
+                    else -> C.cardBorder
                 },
                 shape,
             )
