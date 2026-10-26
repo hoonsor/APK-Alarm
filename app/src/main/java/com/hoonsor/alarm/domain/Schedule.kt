@@ -99,6 +99,35 @@ object TimerEdit {
         (currentRemaining + delta).coerceIn(1_000L, MAX_MS)
 }
 
+/**
+ * 滾輪的索引計算（JVM 單元測試覆蓋）。
+ * 循環滾輪用「重複很多圈」的清單模擬頭尾相接：從中間那圈開始，實際上滑不到盡頭。
+ * offset＝值在範圍內的位置（0 … count-1）。
+ */
+object WheelMath {
+    const val LAPS = 1000
+
+    fun itemCount(count: Int, cyclic: Boolean) = if (cyclic) count * LAPS else count
+
+    fun initialIndex(offset: Int, count: Int, cyclic: Boolean): Int {
+        val o = offset.coerceIn(0, count - 1)
+        return if (cyclic) (LAPS / 2) * count + o else o
+    }
+
+    fun offsetAt(index: Int, count: Int, cyclic: Boolean): Int =
+        if (cyclic) Math.floorMod(index, count) else index.coerceIn(0, count - 1)
+
+    /** 外部改值時要捲到的索引：循環滾輪挑離目前最近的那一圈（59 → 00 往下一格，不會倒捲 59 格） */
+    fun nearestIndex(current: Int, offset: Int, count: Int, cyclic: Boolean): Int {
+        val o = offset.coerceIn(0, count - 1)
+        if (!cyclic) return o
+        val base = current - Math.floorMod(current, count) + o
+        return listOf(base, base - count, base + count) // 一樣近時優先往下捲
+            .filter { it in 0 until itemCount(count, true) }
+            .minBy { kotlin.math.abs(it - current) }
+    }
+}
+
 object Fmt {
     fun hm(hour: Int, minute: Int) = "%02d:%02d".format(hour, minute)
 

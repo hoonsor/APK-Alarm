@@ -52,6 +52,7 @@ import com.hoonsor.alarm.data.TimerState
 import com.hoonsor.alarm.domain.Fmt
 import com.hoonsor.alarm.domain.NextTrigger
 import com.hoonsor.alarm.domain.TimerEdit
+import com.hoonsor.alarm.domain.WheelMath
 import com.hoonsor.alarm.scheduler.AlarmScheduler
 import com.hoonsor.alarm.ui.common.Glyph
 import com.hoonsor.alarm.ui.common.GlyphIcon
@@ -69,17 +70,19 @@ private const val MAX_MS = (99 * 3600L + 59 * 60L + 59) * 1000L
 /**
  * 上下滑動的數字滾輪（一次顯示 3 格，中間那格是選取值）。
  * 外部改值（例如按「+5 分」）時會自動捲到新的值。
+ * cyclic = true：頭尾相接（分、秒：00 上面是 59），不用滑到底再滑回來。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun WheelPicker(range: IntRange, value: Int, onValue: (Int) -> Unit, unit: String, modifier: Modifier = Modifier) {
-    val state = rememberLazyListState(initialFirstVisibleItemIndex = (value - range.first).coerceAtLeast(0))
+fun WheelPicker(range: IntRange, value: Int, onValue: (Int) -> Unit, unit: String, modifier: Modifier = Modifier, cyclic: Boolean = false) {
+    val count = range.count()
+    val state = rememberLazyListState(initialFirstVisibleItemIndex = WheelMath.initialIndex(value - range.first, count, cyclic))
     val fling = rememberSnapFlingBehavior(state)
     val itemPx = with(LocalDensity.current) { ITEM_H.toPx() }
     val centered by remember {
         derivedStateOf {
             val idx = state.firstVisibleItemIndex + if (state.firstVisibleItemScrollOffset > itemPx / 2) 1 else 0
-            (range.first + idx).coerceIn(range)
+            range.first + WheelMath.offsetAt(idx, count, cyclic)
         }
     }
     val currentValue by rememberUpdatedState(value)
@@ -99,7 +102,7 @@ fun WheelPicker(range: IntRange, value: Int, onValue: (Int) -> Unit, unit: Strin
         if (!state.isScrollInProgress && centered != value) {
             autoScrolling = true
             try {
-                state.animateScrollToItem((value - range.first).coerceAtLeast(0))
+                state.animateScrollToItem(WheelMath.nearestIndex(state.firstVisibleItemIndex, value - range.first, count, cyclic))
             } finally {
                 autoScrolling = false
             }
@@ -118,8 +121,8 @@ fun WheelPicker(range: IntRange, value: Int, onValue: (Int) -> Unit, unit: Strin
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth().height(ITEM_H * 3),
             ) {
-                items(range.count()) { i ->
-                    val v = range.first + i
+                items(WheelMath.itemCount(count, cyclic)) { i ->
+                    val v = range.first + WheelMath.offsetAt(i, count, cyclic)
                     Box(Modifier.height(ITEM_H).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         Text(
                             "%02d".format(v),
@@ -151,8 +154,8 @@ fun DurationWheels(ms: Long, onChange: (Long) -> Unit) {
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         WheelPicker(0..99, h, { emit(0, it) }, "時", Modifier.weight(1f))
-        WheelPicker(0..59, m, { emit(1, it) }, "分", Modifier.weight(1f))
-        WheelPicker(0..59, s, { emit(2, it) }, "秒", Modifier.weight(1f))
+        WheelPicker(0..59, m, { emit(1, it) }, "分", Modifier.weight(1f), cyclic = true)
+        WheelPicker(0..59, s, { emit(2, it) }, "秒", Modifier.weight(1f), cyclic = true)
     }
 }
 
