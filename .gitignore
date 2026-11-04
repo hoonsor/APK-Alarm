@@ -7,3 +7,5 @@ local.properties
 .DS_Store
 .kotlin/
 _trash/
+
+.env.keys
