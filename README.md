@@ -23,6 +23,7 @@
 - **支援標準 Intent**：Google 助理或你自己的自動化工具可用 `ACTION_SET_ALARM`、`ACTION_SET_TIMER` 直接在本 App 建立鬧鐘與計時器。
 
 - **備份與還原**：鬧鐘、群組、計時器與設定可打包成一個備份檔（可選擇是否包含圖片與鈴聲）。可以「分享」給 LINE、新增至 Dropbox、上傳到雲端硬碟等任何 App，或「儲存到檔案」；匯入可選「合併」或「取代」。手機開啟 Google 備份時，Android 也會自動備份並在重新安裝或換手機時還原。
+- **每日自動備份到 Dropbox**（Android 10 以上）：每天自動把完整備份（含響鈴圖片與自訂鈴聲）存到手機的 `Documents/HoonsorBackup/HoonsorAlarm/`，檔名是日期時間（例如 `HoonsorAlarm-20261110-0930.zip`）；用 Dropsync 把 `HoonsorBackup` 資料夾同步到 Dropbox。內容沒變就不另存，只留最近 7 份；MiniMax API key 不備份。設定頁「備份與還原」可開關、看上次備份時間、按「立即備份」。**還原**：按「從檔案匯入…」，到「文件（Documents）› HoonsorBackup › HoonsorAlarm」選最新的檔，換新手機選「取代」；新手機還沒有這個資料夾時，先用 Dropsync 把 Dropbox 的 `HoonsorBackup` 同步回手機，或從 Dropbox App 下載該檔再匯入。
 - **免接線更新**：每天開啟時自動檢查 GitHub 上的新版，也可在設定頁按「檢查更新」；確認後直接下載並交給系統安裝，鬧鐘資料保留、更新完自動重新排程。也支援用 Obtainium 追蹤更新。
 
 ## 為什麼比一般鬧鐘可靠
@@ -91,13 +92,14 @@ app/src/main/java/com/hoonsor/alarm/
 ├── image/ImageStore.kt    響鈴圖片匯入（複製壓縮到 App 內部）
 ├── sound/SoundStore.kt    鈴聲匯入、名稱、試聽
 ├── agent/                 Hoonsor Agent API（語音總控用的 describe／execute／health）
-├── backup/                備份檔匯出、匯入（合併／取代）
+├── backup/                備份檔匯出、匯入（合併／取代）、每日自動備份來源（HoonsorAlarmBackupSource）
 ├── update/                App 內自我更新（查 GitHub Releases、下載、PackageInstaller 安裝），可整包複製到其他 APP
 ├── tts/TtsEngine.kt       語音播報（念出文字、MiniMax 預先產生與快取）
 ├── voice/                 語音辨識畫面、AI 解析（AiParser）與離線規則解析
 └── ui/                    鬧鐘、計時器、碼錶、可靠度、設定畫面
+app/src/main/java/tw/hoonsor/backup/   共用模組 android-auto-backup（每日自動備份，勿直接改，改模組庫）
 ```
 
 ## 版本
 
-目前 v0.12.3。進度與待辦見 [PROJECT_STATUS.md](PROJECT_STATUS.md)。
+目前 v0.13.0。進度與待辦見 [PROJECT_STATUS.md](PROJECT_STATUS.md)。

@@ -3,6 +3,8 @@ package com.hoonsor.alarm.ui.settings
 import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -28,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -40,15 +43,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.hoonsor.alarm.backup.BackupManager
+import com.hoonsor.alarm.backup.HoonsorAlarmBackupSource
 import com.hoonsor.alarm.backup.ImportMode
 import com.hoonsor.alarm.backup.ImportResult
 import com.hoonsor.alarm.ui.common.Glyph
 import com.hoonsor.alarm.ui.common.GlyphIcon
+import com.hoonsor.alarm.ui.common.MiniSwitch
 import com.hoonsor.alarm.ui.theme.C
 import kotlinx.coroutines.launch
+import tw.hoonsor.backup.AutoBackup
 
-/** 設定頁：備份與還原（分享備份檔、儲存到檔案、從檔案匯入） */
+/** 設定頁：備份與還原（分享備份檔、儲存到檔案、從檔案匯入、每日自動備份） */
 @Composable
 fun BackupCard() {
     val context = LocalContext.current
@@ -151,6 +159,9 @@ fun BackupCard() {
         )
 
         HorizontalDivider(color = C.border)
+        AutoBackupSection(busy) { msg -> message = msg }
+
+        HorizontalDivider(color = C.border)
         Text(
             "另外，手機開啟「Google 備份」時，Android 會自動把鬧鐘資料備份到你的 Google 帳號，重新安裝或換手機登入同一帳號時自動還原。",
             color = C.dim, fontSize = 12.sp, lineHeight = 18.sp,
@@ -185,6 +196,56 @@ fun BackupCard() {
             },
         )
     }
+}
+
+/**
+ * 每日自動備份（hoonsor-kit android-auto-backup）：開關、上次備份狀態、立即備份。
+ * 還原沿用上面的「從檔案匯入…」，到 Documents/HoonsorBackup/HoonsorAlarm/ 選檔。
+ */
+@Composable
+private fun AutoBackupSection(otherBusy: Boolean, onMessage: (Pair<Boolean, String>) -> Unit) {
+    val context = LocalContext.current
+    val folder = remember { AutoBackup.folder(HoonsorAlarmBackupSource()) }
+    var tick by remember { mutableIntStateOf(0) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { tick++ } // 從背景回來時更新「上次備份」
+    var on by remember { mutableStateOf(AutoBackup.isEnabled(context)) }
+    var running by remember { mutableStateOf(false) }
+    val status = remember(tick, on, running) { AutoBackup.statusText(context) }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("每日自動備份", color = C.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text(status, color = C.dim, fontSize = 12.sp, lineHeight = 18.sp)
+        }
+        MiniSwitch(on, { on = !on; AutoBackup.setEnabled(context, on); tick++ }, large = true, contentDescription = "每日自動備份")
+    }
+    Text(
+        "每天自動存一份完整備份（含響鈴圖片與自訂鈴聲）到手機的 $folder，用 Dropsync 同步到 Dropbox。" +
+            "內容沒變就不另存，只留最近 ${AutoBackup.KEEP} 份；MiniMax API key 不備份。",
+        color = C.muted, fontSize = 12.sp, lineHeight = 18.sp,
+    )
+    OutlinedButton(
+        enabled = !running && !otherBusy,
+        onClick = {
+            running = true
+            onMessage(true to "自動備份中…")
+            AutoBackup.runNowAsync(context) { err ->
+                Handler(Looper.getMainLooper()).post {
+                    running = false
+                    tick++
+                    onMessage(if (err == null) true to "已備份到 $folder" else false to "備份失敗：$err")
+                }
+            }
+        },
+    ) {
+        Text(if (running) "備份中…" else "立即備份", color = C.text)
+    }
+    Text(
+        "從自動備份還原：按上面的「從檔案匯入…」，到「文件（Documents）› HoonsorBackup › HoonsorAlarm」選最新的檔" +
+            "（檔名是日期與時間，例如 HoonsorAlarm-20261110-0930.zip）；換新手機時選「取代」。" +
+            "新手機上還沒有這個資料夾時，先用 Dropsync 把 Dropbox 的 HoonsorBackup 同步回手機，或從 Dropbox App 下載該檔再匯入。",
+        color = C.dim, fontSize = 12.sp, lineHeight = 18.sp,
+    )
 }
 
 private fun resultText(r: ImportResult): String = buildString {

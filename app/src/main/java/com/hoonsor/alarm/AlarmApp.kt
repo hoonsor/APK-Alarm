@@ -40,5 +40,7 @@ class AlarmApp : Application() {
             runCatching { getSystemService(AudioManager::class.java).setStreamVolume(AudioManager.STREAM_ALARM, saved, 0) }
             Graph.settings.savedAlarmVolume = -1
         }
+        // 每日自動備份到 Documents/HoonsorBackup/HoonsorAlarm/（開著才排，已排好不重排）
+        runCatching { tw.hoonsor.backup.AutoBackup.ensureScheduled(this) }
     }
 }

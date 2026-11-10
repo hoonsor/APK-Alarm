@@ -15,9 +15,11 @@ import com.hoonsor.alarm.data.VignetteShape
 import com.hoonsor.alarm.tts.TtsEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import tw.hoonsor.backup.AutoBackup
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -46,6 +48,8 @@ object BackupManager {
     private const val IMG_PREFIX = "media/images/"
     private const val SND_PREFIX = "media/sounds/"
     const val MIME = "application/zip"
+    /** 自動備份 zip 項目的固定時間（1980-01-02，zip 能表示的最早日期之後） */
+    private const val STABLE_ZIP_TIME = 315_619_200_000L
 
     fun suggestedName(now: LocalDateTime = LocalDateTime.now()): String =
         "HoonsorAlarm-backup-" + now.format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmm")) + ".zip"
@@ -69,7 +73,14 @@ object BackupManager {
         file
     }
 
-    private suspend fun writeZip(out: OutputStream, includeMedia: Boolean) {
+    /**
+     * 每日自動備份用（[HoonsorAlarmBackupSource]，在背景執行緒呼叫）：一律包含圖片與鈴聲（自訂媒體只存在手機上）。
+     * 內容固定：不寫匯出時間、zip 項目時間固定，資料沒變時雜湊相同，自動備份才不會每天多存一份。
+     */
+    fun writeForAutoBackup(out: OutputStream) = runBlocking(Dispatchers.IO) { writeZip(out, includeMedia = true, stable = true) }
+
+    /** stable＝不寫匯出時間、zip 項目時間固定（自動備份比對內容用）；手動匯出維持原本格式 */
+    private suspend fun writeZip(out: OutputStream, includeMedia: Boolean, stable: Boolean = false) {
         val db = Graph.db
         val alarms = db.alarmDao().getAll()
         val groups = db.groupDao().getAll()
@@ -93,7 +104,7 @@ object BackupManager {
             .put("app", "HoonsorAlarm")
             .put("format", FORMAT)
             .put("appVersion", BuildConfig.VERSION_NAME)
-            .put("exportedAt", System.currentTimeMillis())
+            .putOpt("exportedAt", if (stable) null else System.currentTimeMillis())
             .put("includesMedia", includeMedia)
             .put("alarmGroups", JSONArray().apply { groups.forEach { put(groupJson(it.id, it.name, it.enabled, it.expanded, it.sortOrder, it.createdAt, it.colorIndex)) } })
             .put("timerGroups", JSONArray().apply { timerGroups.forEach { put(groupJson(it.id, it.name, it.enabled, it.expanded, it.sortOrder, it.createdAt, it.colorIndex)) } })
@@ -140,12 +151,13 @@ object BackupManager {
                     .put("rampSeconds", s.rampSeconds).put("timerSort", s.timerSort).put("lastTimerMs", s.lastTimerMs),
             )
 
+        fun zipEntry(name: String) = ZipEntry(name).apply { if (stable) time = STABLE_ZIP_TIME }
         ZipOutputStream(out.buffered()).use { zip ->
-            zip.putNextEntry(ZipEntry(JSON_NAME))
+            zip.putNextEntry(zipEntry(JSON_NAME))
             zip.write(json.toString(2).toByteArray(Charsets.UTF_8))
             zip.closeEntry()
             media.forEach { (entry, file) ->
-                zip.putNextEntry(ZipEntry(entry))
+                zip.putNextEntry(zipEntry(entry))
                 file.inputStream().use { it.copyTo(zip) }
                 zip.closeEntry()
             }
@@ -337,4 +349,17 @@ object BackupManager {
     }
 
     private fun JSONObject.optStr(name: String): String? = if (!has(name) || isNull(name)) null else optString(name).takeIf { it.isNotBlank() }
+}
+
+/**
+ * 每日自動備份的來源（hoonsor-kit android-auto-backup；AndroidManifest 的 tw.hoonsor.backup.SOURCE 指到這裡）。
+ * 寫到 Documents/HoonsorBackup/HoonsorAlarm/，倬用 Dropsync 同步到 Dropbox；還原用設定頁「從檔案匯入…」選這個資料夾的檔。
+ * 內容與手動備份相同（backup.json＋圖片與鈴聲），API key 不備份。
+ */
+class HoonsorAlarmBackupSource : AutoBackup.Source {
+    /** 本 APP 沒有 lab flavor，只有正式版一個名稱 */
+    override fun appName() = "HoonsorAlarm"
+    override fun extension() = "zip"
+    override fun mimeType() = BackupManager.MIME
+    override fun write(context: Context, out: OutputStream) = BackupManager.writeForAutoBackup(out)
 }

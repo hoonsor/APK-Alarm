@@ -1,8 +1,8 @@
 # PROJECT_STATUS
 
 - 專案：鬧鐘（HoonsorAlarm）
-- 目前版本：v0.12.3
-- 最後更新：2026/10/25
+- 目前版本：v0.13.0（feat/auto-backup 分支，尚未合併、未發版）
+- 最後更新：2026/11/10
 
 ## 發布流程（免接線更新）
 
@@ -13,6 +13,13 @@
 - 第一次從 debug 版換成正式簽章版：先備份 → 解除安裝 → 安裝正式版 → 匯入備份（只需一次）。
 
 ## 版本紀錄
+
+### v0.13.0 — 2026/11/10
+- feat: 每日自動備份到 Dropbox：套用共用模組 hoonsor-kit `android-auto-backup` v1.0.0（`tw/hoonsor/backup/` 的 AutoBackup.java、BackupJobService.java，未修改）。每天用 JobScheduler 把完整備份（backup.json＋響鈴圖片與自訂鈴聲）寫到手機的 `Documents/HoonsorBackup/HoonsorAlarm/HoonsorAlarm-yyyyMMdd-HHmm.zip`，倬用 Dropsync 同步到 Dropbox；內容沒變不另存，只留最近 7 份（只刪符合檔名格式的檔，手動存的 `HoonsorAlarm-backup-…zip` 不會被刪）。需要 Android 10 以上，更舊的手機設定頁會說明、不會當掉。原因：v0.9.0 移除了 WorkManager＋雲端 API 的自動備份，改用零依賴、不需登入的共用模組
+- feat: 設定頁「備份與還原」新增「每日自動備份」開關（預設開）、上次備份狀態、「立即備份」按鈕與從自動備份還原的說明；還原沿用「從檔案匯入…」（合併／取代）
+- change: 備份匯出核心新增 stable 模式（`BackupManager.writeForAutoBackup`）：自動備份不寫 `exportedAt`、zip 項目時間固定，資料沒變時雜湊相同才不會每天多存一份；手動匯出格式不變，匯入相容
+- 來源：`backup/BackupManager.kt` 的 `HoonsorAlarmBackupSource`（appName "HoonsorAlarm"、zip；本 APP 沒有 lab flavor）；AndroidManifest 登記 meta-data 與 BackupJobService，沿用既有 RECEIVE_BOOT_COMPLETED（排程重開機後保留）；`AlarmApp.onCreate` 呼叫 `AutoBackup.ensureScheduled`
+- test: AutoBackupTest（檔名、只認自己的檔、保留最新 7 份）、HoonsorAlarmBackupSourceTest（appName、extension、資料夾）
 
 ### v0.12.3 — 2026/10/27
 - change: 鬧鐘與計時器卡片改用專用色 `C.card`（#1B2130）、`C.cardBorder`（#3A4359）、展開中 `C.cardOpen`（#242B3D）；群組卡片框線改用群組色 55%（原 28%）。原因：倬反映卡片底色（#161A23）與背景（#0E1117）太像、框線（#232836）幾乎看不到，分不出卡片範圍。對話框等其他使用 `C.surface` 的地方不變
@@ -149,6 +156,7 @@
 
 ## 待辦
 
+- [ ] v0.13.0 實機驗證：設定頁「立即備份」在 `Documents/HoonsorBackup/HoonsorAlarm/` 產生 zip、內容沒變再按不另存（自動排程）、Dropsync 同步到 Dropbox、用「從檔案匯入…」選該檔還原（含圖片與鈴聲）、關閉開關後不再排程
 - [ ] 倬執行 setup-hoonsor-signing.ps1 寫入 SIGNING_* Secrets，再推 v0.11.0 tag
 - [ ] v0.11.0 實機驗證：手機改裝正式簽章版（備份→解除安裝→安裝→還原）、App 內更新完整流程、Obtainium 追蹤
 - [x] v0.1.0 已在 OPPO Reno 14F 實機編譯安裝
@@ -165,3 +173,17 @@
 - [ ] Kotlin / AGP / KSP 版本一次對齊升級
 - [ ] 「正在聆聽」畫面的聲波動畫
 - [ ] 桌面小工具（顯示下一個鬧鐘）
+
+## 交接紀錄
+
+### 2026/11/10 — 電腦 A（Claude，worktree `D:\dev\HoonsorAlarm-backup`，分支 `feat/auto-backup`）
+- 完成：套用共用模組 android-auto-backup（每日自動備份到 Documents/HoonsorBackup/HoonsorAlarm/，Dropsync 同步到 Dropbox），版本 v0.13.0（versionCode 22）。單元測試與 assembleDebug 通過
+- 決定＋原因：
+  - Source 呼叫既有匯出核心並一律包含圖片與鈴聲：使用者自訂的媒體只存在手機上，換機時最需要
+  - 匯出核心加 stable 模式（不寫匯出時間、zip 項目時間固定）：不然每次內容雜湊都不同，模組「內容沒變不另存」會失效，每天都多一份
+  - 檔名用模組的 `HoonsorAlarm-yyyyMMdd-HHmm.zip`，不用手動匯出的 `HoonsorAlarm-backup-…`：模組的 prune 只刪自己格式的檔，兩者互不干擾
+  - 還原不另做按鈕，沿用「從檔案匯入…」：已有合併／取代與損毀保護
+- 放棄：重新引入 WorkManager（v0.9.0 已移除，模組用 JobScheduler 零依賴即可）；在自動備份裡排除執行中計時器的剩餘時間（計時器在跑時才會讓內容不同，頂多多存一份，不值得改資料語意）
+- 未完成：尚未 push、未合併 main、未打 tag、未發版；未實機驗證（見待辦 v0.13.0）
+- 下一步：實機驗證後合併 main（合併前打 `pre-merge-v0.13.0`），push main 與 `v0.13.0` tag 發版；語音總控說明書（APK-VoiceHub docs/manual/MANUAL.md）「倬的鬧鐘」一章可補一句自動備份位置
+- 環境注意：worktree 需要自己的 `local.properties`（已從原資料夾複製，被 .gitignore 忽略）；沒有新增環境變數或套件

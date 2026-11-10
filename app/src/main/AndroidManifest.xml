@@ -101,6 +101,13 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- 每日自動備份（hoonsor-kit android-auto-backup）：寫到 Documents/HoonsorBackup/HoonsorAlarm/，Dropsync 同步到 Dropbox -->
+        <meta-data android:name="tw.hoonsor.backup.SOURCE" android:value="com.hoonsor.alarm.backup.HoonsorAlarmBackupSource" />
+        <service
+            android:name="tw.hoonsor.backup.BackupJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <!-- Hoonsor Agent API：語音總控用 describe／execute／health 操作鬧鐘與計時器 -->
         <provider
             android:name=".agent.AgentProvider"
