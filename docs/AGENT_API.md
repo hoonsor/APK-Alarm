@@ -24,13 +24,32 @@
 
 使用者明確說「固定」「重複」「常駐」「保留」「響完不要刪」時，大腦才給 false。這條規則同時寫在 describe 的 description 與參數說明裡，大腦不需要寫死。
 
+## 指定日期（date）規則
+
+「下週一」「這週五」「11 月 20 號」是**指定某一天響一次**，用 `date`，不要用 `days`（`days` 是每週重複）。
+
+| date 的寫法 | 意思 |
+|---|---|
+| today、tomorrow、day_after_tomorrow | 今天、明天、後天 |
+| this_mon … this_sun | 這週的星期幾（已經過了會回 INVALID_PARAMS） |
+| next_mon … next_sun | 下週的星期幾 |
+| next2_mon … next2_sun | 下下週的星期幾 |
+| YYYY-MM-DD、YYYY/MM/DD、M/D、「11月20日」 | 指定日期；M/D 沒說年份時，今年已過就是明年 |
+| 「下週一」「這禮拜五」等中文 | 也看得懂，但建議用上面的英文代號 |
+
+- 一週從週一開始算：週六說「下週一」是後天，週一說「下週一」是七天後。日期由鬧鐘 APP 換算，大腦不用自己算。
+- 保險：`repeat: "once"` 又給了一天的 `days`（例如 `[1]`）時，當成最近的那個星期一，不會變成每週重複；給多天回 INVALID_PARAMS。
+- 回覆的 summary 會唸出日期與星期（「後天 11/16（一） 09:00」），讓倬確認沒算錯。
+- alarm_update 也能用 `date` 改日期；空字串＝取消指定日期。改成重複鬧鐘時，原本指定的日期自動取消。
+- alarm_list 每個鬧鐘多回傳 `date`（YYYY-MM-DD，沒指定為 null）。
+
 ## 動作
 
 | 動作 | risk | 參數 | 範例句 | 回傳 data |
 |---|---|---|---|---|
-| alarm_list | read | query?, group?, enabled_only?, limit? | 我有哪些鬧鐘 | total、alarms[]（含 auto_delete）、groups[] |
-| alarm_create | reversible | hour, minute?, repeat?, days?, date?, memo?, group?, auto_delete? | 明天早上七點叫我 | id、next、auto_delete；undo＝alarm_delete |
-| alarm_update | reversible | ids? / query?, hour?, minute?, repeat?, days?, memo?, group?, auto_delete? | 把上班的鬧鐘改成七點十五 | id；undo＝alarm_update 回原值 |
+| alarm_list | read | query?, group?, enabled_only?, limit? | 我有哪些鬧鐘 | total、alarms[]（含 auto_delete、date）、groups[] |
+| alarm_create | reversible | hour, minute?, repeat?, days?, date?, memo?, group?, auto_delete? | 設定下週一九點開會的一次性鬧鐘 | id、next、auto_delete、date；undo＝alarm_delete |
+| alarm_update | reversible | ids? / query?, hour?, minute?, repeat?, days?, date?, memo?, group?, auto_delete? | 開會的鬧鐘改到下週三 | id；undo＝alarm_update 回原值 |
 | alarm_toggle | reversible | ids? / query? / all?, enabled | 把七點的鬧鐘關掉 | ids；undo＝反向 |
 | alarm_skip_next | reversible | ids? / query? / all?, skip? | 明天的上班鬧鐘略過 | ids；undo＝反向 |
 | alarm_delete | destructive | ids? / query? / all? | 刪掉七點的鬧鐘 | ids |
@@ -48,5 +67,6 @@
 
 ## 變更紀錄
 
+- v0.14.0（2026-11-14）：`date` 新增 this_/next_/next2_ 星期代號、YYYY/MM/DD、M/D；alarm_update 新增選填 `date`；alarm_list 回傳 date；repeat once＋單一 days 視為指定那一天。只新增選填參數與欄位，相容。
 - v0.12.0（2026-10-25）：alarm_create、alarm_update、timer_start 新增選填 `auto_delete`；alarm_list、timer_list 回傳 auto_delete。
 - v0.12.0 之前（2026-10-20 實作，v0.12.0 首次發布）：11 個動作。

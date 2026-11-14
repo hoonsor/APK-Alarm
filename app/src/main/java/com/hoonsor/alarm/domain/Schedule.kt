@@ -5,6 +5,7 @@ import com.hoonsor.alarm.data.AlarmGroupEntity
 import com.hoonsor.alarm.data.TimerEntity
 import com.hoonsor.alarm.data.TimerState
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -46,6 +47,18 @@ object NextTrigger {
         val snooze = alarm.snoozeUntil?.takeIf { it > nowMs }
         val regular = if (alarm.enabled && groupEnabled) nextRegular(alarm, nowMs, zone) else null
         return listOfNotNull(snooze, regular).minOrNull()
+    }
+
+    /**
+     * 只響一次、而且指定了日期（今天或之後）的鬧鐘，回傳那一天；其他情況回傳 null。
+     * 指定日期存在 notBefore（那天的 00:00）。日期已過的舊資料視為沒有指定。
+     */
+    fun fixedDate(alarm: AlarmEntity, nowMs: Long, zone: ZoneId = ZoneId.systemDefault()): LocalDate? {
+        if (alarm.daysMask != 0) return null
+        val nb = alarm.notBefore ?: return null
+        val date = Instant.ofEpochMilli(nb).atZone(zone).toLocalDate()
+        val today = Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
+        return date.takeIf { !it.isBefore(today) }
     }
 
     fun forAlarm(alarm: AlarmEntity, nowMs: Long, groups: Map<Long, AlarmGroupEntity>): Long? =

@@ -11,6 +11,7 @@ import com.hoonsor.alarm.data.TimerState
 import com.hoonsor.alarm.data.deletesAfterRing
 import com.hoonsor.alarm.data.isActive
 import com.hoonsor.alarm.data.isSkipping
+import com.hoonsor.alarm.domain.DateWords
 import com.hoonsor.alarm.domain.Days
 import com.hoonsor.alarm.domain.Fmt
 import com.hoonsor.alarm.domain.NextTrigger
@@ -22,6 +23,7 @@ import tw.hoonsor.agent.HoonsorAgent
 import java.security.SecureRandom
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -89,6 +91,7 @@ object AlarmAgent {
             .put("skipping_next", a.isSkipping(nowMs))
             .put("next", next?.let { AgentLogic.whenText(it, nowMs) } ?: JSONObject.NULL)
             .put("auto_delete", a.deletesAfterRing)
+            .put("date", NextTrigger.fixedDate(a, nowMs)?.toString() ?: JSONObject.NULL)
     }
 
     // ---------- 鬧鐘 ----------
@@ -123,12 +126,18 @@ object AlarmAgent {
         val hour = p.getInt("hour")
         val minute = p.optInt("minute", 0)
         if (hour !in 0..23 || minute !in 0..59) return HoonsorAgent.fail(HoonsorAgent.INVALID_PARAMS, "時間不正確：$hour 點 $minute 分。")
-        val mask = AgentLogic.parseDaysMask(p) ?: 0
         val zone = ZoneId.systemDefault()
-        val date = if (mask == 0) AgentLogic.parseDate(AgentLogic.optText(p, "date"), LocalDate.now(zone)) else null
+        val today = LocalDate.now(zone)
+        // 「只響一次」又給了 days：大腦把「下週一」「這週五」填成星期時，換成最近的那一天，不要變成每週重複
+        val onceDay = AgentLogic.onceWeekday(p, hour, minute, ZonedDateTime.now(zone))
+        if (onceDay == null && AgentLogic.optText(p, "repeat") == "once" && (p.optJSONArray("days")?.length() ?: 0) > 1) {
+            return HoonsorAgent.fail(HoonsorAgent.INVALID_PARAMS, "只響一次的鬧鐘只能指定一天，要哪一天？")
+        }
+        val mask = if (onceDay != null) 0 else AgentLogic.parseDaysMask(p) ?: 0
+        val date = onceDay ?: if (mask == 0) AgentLogic.parseDate(AgentLogic.optText(p, "date"), today) else null
         val notBefore = date?.atStartOfDay(zone)?.toInstant()?.toEpochMilli()
         if (date != null && date.atTime(hour, minute).atZone(zone).toInstant().toEpochMilli() <= now()) {
-            return HoonsorAgent.fail(HoonsorAgent.INVALID_PARAMS, "${date.monthValue}/${date.dayOfMonth} ${Fmt.hm(hour, minute)} 已經過了，要改成明天嗎？")
+            return HoonsorAgent.fail(HoonsorAgent.INVALID_PARAMS, "${DateWords.short(date)} ${Fmt.hm(hour, minute)} 已經過了，要改成哪一天？")
         }
         val memo = AgentLogic.optText(p, "memo").orEmpty()
         val groupName = AgentLogic.optText(p, "group")
@@ -136,7 +145,11 @@ object AlarmAgent {
         val autoDelete = mask == 0 && p.optBoolean("auto_delete", true)
         val draft = AlarmEntity(hour = hour, minute = minute, daysMask = mask, memo = memo, notBefore = notBefore, autoDelete = autoDelete)
         val nextMs = NextTrigger.nextRegular(draft, now(), zone)
-        val whenText = if (mask == 0) nextMs?.let { AgentLogic.whenText(it, now()) } ?: Fmt.hm(hour, minute) else "${Days.summary(mask)} ${Fmt.hm(hour, minute)}"
+        val whenText = when {
+            mask != 0 -> "${Days.summary(mask)} ${Fmt.hm(hour, minute)}"
+            date != null -> AgentLogic.dateWhen(date, hour, minute, today)
+            else -> nextMs?.let { AgentLogic.whenText(it, now()) } ?: Fmt.hm(hour, minute)
+        }
         val what = whenText + (if (memo.isNotEmpty()) "「$memo」" else "") + (if (autoDelete) "的一次性鬧鐘" else "的鬧鐘") +
             (groupName?.let { "（放在$it 群組）" }.orEmpty())
         if (dryRun) return HoonsorAgent.ok("（試跑）會新增$what")
@@ -145,6 +158,7 @@ object AlarmAgent {
         val id = repo.addAlarm(draft.copy(groupId = groupId))
         val data = JSONObject().put("id", id).put("next", nextMs?.let { AgentLogic.whenText(it, now()) } ?: JSONObject.NULL)
         data.put("auto_delete", autoDelete)
+        date?.let { data.put("date", it.toString()) }
         val note = if (autoDelete) "，響完會自動刪除" else ""
         return HoonsorAgent.ok("已新增$what$note。", data, "alarm_delete", JSONObject().put("ids", JSONArray(listOf(id))))
     }
@@ -158,11 +172,32 @@ object AlarmAgent {
         val hour = if (p.has("hour")) p.getInt("hour") else a.hour
         val minute = if (p.has("minute")) p.getInt("minute") else if (p.has("hour")) 0 else a.minute
         if (hour !in 0..23 || minute !in 0..59) return HoonsorAgent.fail(HoonsorAgent.INVALID_PARAMS, "時間不正確：$hour 點 $minute 分。")
-        val mask = AgentLogic.parseDaysMask(p) ?: a.daysMask
+        val zone = ZoneId.systemDefault()
+        val nowMs = now()
+        val today = LocalDate.now(zone)
+        val onceDay = AgentLogic.onceWeekday(p, hour, minute, ZonedDateTime.now(zone))
+        val mask = if (onceDay != null) 0 else AgentLogic.parseDaysMask(p) ?: a.daysMask
+        // date：指定單次鬧鐘的日期；空字串＝取消指定（下一次到這個時間就響）；改成重複鬧鐘時一律取消
+        val dateParam = if (p.has("date") && !p.isNull("date")) p.optString("date") else null
+        val dateGiven = onceDay != null || dateParam != null
+        val newDate = onceDay ?: AgentLogic.parseDate(dateParam, today)
+        if (newDate != null && mask != 0) {
+            return HoonsorAgent.fail(HoonsorAgent.INVALID_PARAMS, "重複的鬧鐘不能指定日期，要改成只響一次嗎？")
+        }
+        if (newDate != null && newDate.atTime(hour, minute).atZone(zone).toInstant().toEpochMilli() <= nowMs) {
+            return HoonsorAgent.fail(HoonsorAgent.INVALID_PARAMS, "${DateWords.short(newDate)} ${Fmt.hm(hour, minute)} 已經過了，要改成哪一天？")
+        }
+        val notBefore = when {
+            mask != 0 -> null
+            dateGiven -> newDate?.atStartOfDay(zone)?.toInstant()?.toEpochMilli()
+            else -> a.notBefore
+        }
+        val oldDate = NextTrigger.fixedDate(a, nowMs, zone)
+        val dateChanged = NextTrigger.fixedDate(a.copy(daysMask = mask, notBefore = notBefore), nowMs, zone) != oldDate
         val memo = if (p.has("memo") && !p.isNull("memo")) p.optString("memo").trim() else a.memo
         val groupChange = p.has("group") && !p.isNull("group")
         val groupName = if (groupChange) p.optString("group").trim() else null
-        val timeChanged = hour != a.hour || minute != a.minute || mask != a.daysMask
+        val timeChanged = hour != a.hour || minute != a.minute || mask != a.daysMask || dateChanged
         val autoDelete = if (p.has("auto_delete") && !p.isNull("auto_delete")) p.getBoolean("auto_delete") else a.autoDelete
         if (p.optBoolean("auto_delete", false) && mask != 0) {
             return HoonsorAgent.fail(HoonsorAgent.INVALID_PARAMS, "重複的鬧鐘不能設成一次性，要改成只響一次嗎？")
@@ -171,12 +206,15 @@ object AlarmAgent {
         if (!timeChanged && memo == a.memo && !groupChange && !autoChanged) {
             return HoonsorAgent.fail(HoonsorAgent.INVALID_PARAMS, "要把「${AgentLogic.alarmLabel(a, groups)}」改成什麼？")
         }
-        val after = a.copy(hour = hour, minute = minute, daysMask = mask, memo = memo, autoDelete = autoDelete)
+        val after = a.copy(hour = hour, minute = minute, daysMask = mask, memo = memo, autoDelete = autoDelete, notBefore = notBefore)
         val label = AgentLogic.alarmLabel(after, groups) + if (after.deletesAfterRing) "（一次性）" else ""
         if (dryRun) return HoonsorAgent.ok("（試跑）會把「${AgentLogic.alarmLabel(a, groups)}」改成「$label」")
 
         repo.updateAlarm(a.id, "語音總控修改") { cur ->
-            cur.copy(hour = hour, minute = minute, daysMask = mask, memo = memo, autoDelete = autoDelete, enabled = if (timeChanged) true else cur.enabled)
+            cur.copy(
+                hour = hour, minute = minute, daysMask = mask, memo = memo, autoDelete = autoDelete, notBefore = notBefore,
+                enabled = if (timeChanged) true else cur.enabled,
+            )
         }
         if (groupChange) {
             val gid = groupName?.takeIf { it.isNotEmpty() }?.let { repo.findOrCreateGroup(it) }
@@ -185,6 +223,7 @@ object AlarmAgent {
         val undo = JSONObject().put("ids", JSONArray(listOf(a.id))).put("hour", a.hour).put("minute", a.minute)
             .put("days", AgentLogic.daysArray(a.daysMask)).put("memo", a.memo)
         if (autoChanged) undo.put("auto_delete", a.autoDelete)
+        if (dateChanged) undo.put("date", oldDate?.toString() ?: "")
         if (groupChange) undo.put("group", a.groupId?.let { groups[it]?.name } ?: "")
         return HoonsorAgent.ok("已把鬧鐘改成 $label。", JSONObject().put("id", a.id), "alarm_update", undo)
     }

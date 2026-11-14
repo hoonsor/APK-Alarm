@@ -4,8 +4,10 @@ import com.hoonsor.alarm.data.AlarmEntity
 import com.hoonsor.alarm.data.AlarmGroupEntity
 import com.hoonsor.alarm.data.TimerEntity
 import com.hoonsor.alarm.data.TimerGroupEntity
+import com.hoonsor.alarm.domain.DateWords
 import com.hoonsor.alarm.domain.Days
 import com.hoonsor.alarm.domain.Fmt
+import com.hoonsor.alarm.domain.NextTrigger
 import org.json.JSONArray
 import org.json.JSONObject
 import tw.hoonsor.agent.HoonsorAgent
@@ -49,17 +51,54 @@ object AgentLogic {
     /** daysMask 轉回 days 陣列（undo 用） */
     fun daysArray(mask: Int): JSONArray = JSONArray((1..7).filter { Days.has(mask, it - 1) })
 
+    private val EN_DAYS = listOf("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+    private val REL_EN = Regex("^(this|next|next2)_(mon|tue|wed|thu|fri|sat|sun)$")
+    private val REL_ZH = Regex("^(這|本|下下|下)(?:週|周|星期|禮拜)([一二三四五六日天])$")
+    private val YMD = Regex("^(\\d{4})[/.](\\d{1,2})[/.](\\d{1,2})$")
+    private val MD = Regex("^(\\d{1,2})\\s*[/月]\\s*(\\d{1,2})\\s*[日號号]?$")
+
+    /**
+     * 只響一次的日期：today、tomorrow、day_after_tomorrow、next_mon（下週一）、this_fri（這週五）、
+     * next2_mon（下下週一）、YYYY-MM-DD、YYYY/MM/DD、M/D、「11月20日」「下週一」。
+     * 週一開始算一週（見 [DateWords]）；空白回傳 null，看不懂丟 IllegalArgumentException。
+     */
     fun parseDate(raw: String?, today: LocalDate): LocalDate? {
         val s = raw?.trim().orEmpty()
         if (s.isEmpty()) return null
-        return when (s.lowercase()) {
-            "today", "今天" -> today
-            "tomorrow", "明天" -> today.plusDays(1)
-            "day_after_tomorrow", "後天" -> today.plusDays(2)
-            else -> runCatching { LocalDate.parse(s) }.getOrElse {
-                throw IllegalArgumentException("date 看不懂：$s，請用 YYYY-MM-DD 或 tomorrow")
-            }
+        val lower = s.lowercase()
+        when (lower) {
+            "today", "今天" -> return today
+            "tomorrow", "明天" -> return today.plusDays(1)
+            "day_after_tomorrow", "後天" -> return today.plusDays(2)
         }
+        REL_EN.matchEntire(lower)?.let { m ->
+            val week = when (m.groupValues[1]) { "this" -> 0; "next" -> 1; else -> 2 }
+            return DateWords.weekday(today, week, EN_DAYS.indexOf(m.groupValues[2]))
+        }
+        REL_ZH.matchEntire(s)?.let { m ->
+            val week = when (m.groupValues[1]) { "這", "本" -> 0; "下" -> 1; else -> 2 }
+            return DateWords.weekday(today, week, "一二三四五六日".indexOf(m.groupValues[2].replace('天', '日')))
+        }
+        runCatching { LocalDate.parse(s) }.getOrNull()?.let { return it }
+        YMD.matchEntire(s)?.let { m ->
+            runCatching { LocalDate.of(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt()) }.getOrNull()?.let { return it }
+        }
+        MD.matchEntire(s)?.let { m -> DateWords.monthDay(today, m.groupValues[1].toInt(), m.groupValues[2].toInt())?.let { return it } }
+        throw IllegalArgumentException("date 看不懂：$s，請用 YYYY-MM-DD、next_mon（下週一）或 tomorrow")
+    }
+
+    /**
+     * repeat = once 卻又給了 days（例如大腦把「下週一」填成 days [1]）：只指定一天時換成最近的那一天，
+     * 時間今天已過就排下週；指定多天沒辦法只響一次，回傳 null 由呼叫端詢問。沒有這種情況時也回傳 null。
+     */
+    fun onceWeekday(params: JSONObject, hour: Int, minute: Int, now: ZonedDateTime): LocalDate? {
+        if (optText(params, "repeat") != "once") return null
+        val arr = params.optJSONArray("days") ?: return null
+        if (arr.length() != 1) return null
+        val d = arr.optInt(0, -1).takeIf { it in 1..7 } ?: return null
+        val today = now.toLocalDate()
+        val passed = !now.toLocalTime().isBefore(java.time.LocalTime.of(hour, minute))
+        return DateWords.upcoming(today, d - 1, includeToday = !passed)
     }
 
     private val TIME = Regex("^(\\d{1,2})\\s*[:：點时時]\\s*(\\d{1,2})?\\s*分?$")
@@ -152,9 +191,19 @@ object AgentLogic {
     }
 
     /** 「07:00 上班（平日）」 */
-    fun alarmLabel(a: AlarmEntity, groups: Map<Long, AlarmGroupEntity>): String {
+    fun alarmLabel(a: AlarmEntity, groups: Map<Long, AlarmGroupEntity>, nowMs: Long = System.currentTimeMillis()): String {
         val name = a.memo.trim().ifEmpty { a.groupId?.let { groups[it]?.name }.orEmpty() }
-        return Fmt.hm(a.hour, a.minute) + (if (name.isNotEmpty()) " $name" else "") + "（${Days.summary(a.daysMask)}）"
+        val repeat = NextTrigger.fixedDate(a, nowMs)?.let { "${it.monthValue}/${it.dayOfMonth} 週${Days.LABELS[it.dayOfWeek.value - 1]}" }
+            ?: Days.summary(a.daysMask)
+        return Fmt.hm(a.hour, a.minute) + (if (name.isNotEmpty()) " $name" else "") + "（$repeat）"
+    }
+
+    /** 指定日期的單次鬧鐘要唸的時間：「後天 11/16（一） 09:00」「11/20（五） 09:00」，方便倬確認日期沒算錯 */
+    fun dateWhen(date: LocalDate, hour: Int, minute: Int, today: LocalDate): String {
+        val label = DateWords.label(date, today)
+        val relative = date.isBefore(today.plusDays(3))
+        val day = if (relative) "$label ${DateWords.short(date)}" else label
+        return "$day ${Fmt.hm(hour, minute)}"
     }
 
     fun labels(list: List<AlarmEntity>, groups: Map<Long, AlarmGroupEntity>, max: Int = 3): String {

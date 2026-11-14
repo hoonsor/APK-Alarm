@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.sp
 import com.hoonsor.alarm.data.AlarmEntity
 import com.hoonsor.alarm.data.AlarmGroupEntity
 import com.hoonsor.alarm.data.isActive
+import com.hoonsor.alarm.domain.DateWords
 import com.hoonsor.alarm.domain.Days
 import com.hoonsor.alarm.domain.Fmt
 import com.hoonsor.alarm.domain.NextTrigger
@@ -474,8 +475,9 @@ private fun AlarmTile(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (alarm.daysMask == 0) {
+                    val date = NextTrigger.fixedDate(alarm, System.currentTimeMillis())?.let { " · " + DateWords.short(it) }.orEmpty()
                     Text(
-                        if (alarm.autoDelete) "一次性" else "單次", fontSize = 11.sp, maxLines = 1, softWrap = false,
+                        (if (alarm.autoDelete) "一次性" else "單次") + date, fontSize = 11.sp, maxLines = 1, softWrap = false,
                         color = if (alarm.autoDelete && on) C.accentSoft else C.muted,
                     )
                 } else {

@@ -1,5 +1,6 @@
 package com.hoonsor.alarm.voice
 
+import com.hoonsor.alarm.domain.DateWords
 import com.hoonsor.alarm.domain.Days
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -99,8 +100,17 @@ object VoiceParser {
 
         parseTimer(text, preferTimer)?.let { return VoiceIntent.Timer(it, memo.ifBlank { timerMemo(text) }, groupName) }
 
-        val time = parseClock(stripDays(text)) ?: return VoiceIntent.Unknown("聽不出時間，試試「早上七點十五」或「二十五分鐘後」")
+        val time = parseClock(stripDays(stripDates(text))) ?: return VoiceIntent.Unknown("聽不出時間，試試「早上七點十五」或「二十五分鐘後」")
         val (hour, minute) = time
+
+        // 指定某一天（下週一、這週五、11 月 20 號、「一次性」＋星期）：只響一次，不是每週重複
+        explicitDate(text, now, hour, minute)?.let { d ->
+            if (d.atTime(hour, minute) <= now) {
+                return VoiceIntent.Unknown("${d.monthValue}/${d.dayOfMonth} %02d:%02d 已經過了，要設哪一天？".format(hour, minute))
+            }
+            return VoiceIntent.Alarm(hour, minute, 0, memo, d, groupName = groupName)
+        }
+
         val mask = parseDays(text)
         if (mask != 0) return VoiceIntent.Alarm(hour, minute, mask, memo, groupName = groupName)
 
@@ -280,6 +290,40 @@ object VoiceParser {
         "中午" -> if (hour in 1..2) hour + 12 else hour
         "半夜" -> if (hour == 12) 0 else hour
         else -> hour
+    }
+
+    // ---------- 指定日期 ----------
+
+    /** 「下週一」「下下禮拜三」「這週五」「本星期日」 */
+    private val REL_WEEK = Regex("(這|本|下下|下)(?:個)?(?:週|周|星期|禮拜)([一二三四五六日天])")
+
+    /** 「11月20號」「十一月二十日」「11/20」（後面不能接時間的冒號） */
+    private val MONTH_DAY = Regex("($NUM)月($NUM)[日號号]|(?<![0-9:：])([0-9]{1,2})/([0-9]{1,2})(?![0-9:：])")
+
+    /** 說了只響一次（一次性、只響一次、單次）又只說一個星期，例如「一次性的週三九點」 */
+    private val ONCE_WORD = Regex("一次性|只響一次|響一次就好|單次")
+
+    private fun stripDates(t: String) = MONTH_DAY.replace(REL_WEEK.replace(t, ","), ",")
+
+    private fun explicitDate(t: String, now: LocalDateTime, hour: Int, minute: Int): LocalDate? {
+        val today = now.toLocalDate()
+        REL_WEEK.find(t)?.let { m ->
+            val week = when (m.groupValues[1]) { "這", "本" -> 0; "下" -> 1; else -> 2 }
+            return DateWords.weekday(today, week, dayIndex(m.groupValues[2][0]))
+        }
+        MONTH_DAY.find(t)?.let { m ->
+            val month = cn(m.groupValues[1].ifEmpty { m.groupValues[3] })
+            val day = cn(m.groupValues[2].ifEmpty { m.groupValues[4] })
+            if (month != null && day != null) DateWords.monthDay(today, month, day)?.let { return it }
+        }
+        if (ONCE_WORD.containsMatchIn(t) && !t.contains("每")) {
+            val mask = explicitDays(t)
+            if (Integer.bitCount(mask) == 1) {
+                val passed = !now.toLocalTime().isBefore(java.time.LocalTime.of(hour, minute))
+                return DateWords.upcoming(today, Integer.numberOfTrailingZeros(mask), includeToday = !passed)
+            }
+        }
+        return null
     }
 
     // ---------- 星期 ----------

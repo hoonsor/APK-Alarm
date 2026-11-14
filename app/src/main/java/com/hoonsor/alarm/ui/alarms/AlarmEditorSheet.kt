@@ -28,7 +28,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SelectableDates
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -60,6 +65,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hoonsor.alarm.Graph
 import com.hoonsor.alarm.data.AlarmEntity
+import com.hoonsor.alarm.domain.DateWords
 import com.hoonsor.alarm.domain.Days
 import com.hoonsor.alarm.domain.Fmt
 import com.hoonsor.alarm.ringing.RingInfoFactory
@@ -74,8 +80,17 @@ import com.hoonsor.alarm.ui.common.rememberBitmap
 import com.hoonsor.alarm.tts.TtsEngine
 import com.hoonsor.alarm.ui.theme.C
 import kotlinx.coroutines.delay
+import java.time.LocalDate
 
 private val QUICK_DAYS = listOf("平日" to Days.WEEKDAYS, "週末" to Days.WEEKEND)
+private const val DAY_MS = 86_400_000L
+
+/** 「11/16（一）響一次」，明天、後天另外標出：「明天 11/15（日）響一次」 */
+private fun dateSummary(date: LocalDate): String {
+    val today = LocalDate.now()
+    val rel = if (date.isBefore(today.plusDays(3))) DateWords.label(date, today) + " " else ""
+    return rel + DateWords.short(date) + " 響一次"
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,6 +102,8 @@ fun AlarmEditorSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
     var showTimePicker by remember { mutableStateOf(alarm.isCopy) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    val fixedDate = NextTrigger.fixedDate(alarm, System.currentTimeMillis())
     var memo by remember(alarm.id) { mutableStateOf(alarm.memo) }
     var newGroupDialog by remember { mutableStateOf(false) }
     val groups by vm.groups.collectAsState()
@@ -125,7 +142,7 @@ fun AlarmEditorSheet(
                     modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = "修改時間") { showTimePicker = true },
                 )
                 Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                    Text(Days.summary(alarm.daysMask), color = C.textSoft, fontSize = 14.sp)
+                    Text(fixedDate?.let { dateSummary(it) } ?: Days.summary(alarm.daysMask), color = C.textSoft, fontSize = 14.sp)
                     if (alarm.isCopy) Text("副本 · 點時間修改", color = C.muted, fontSize = 11.sp)
                 }
                 MiniSwitch(alarm.enabled, { vm.toggleEnabled(alarm) }, large = true, contentDescription = "啟用鬧鐘")
@@ -145,6 +162,24 @@ fun AlarmEditorSheet(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Days.LABELS.forEachIndexed { i, l ->
                         DayChip(l, Days.has(alarm.daysMask, i)) { vm.setDays(alarm.id, Days.toggle(alarm.daysMask, i)) }
+                    }
+                }
+                // 只響一次的鬧鐘可以指定日期（例如下週一開會）；選了星期就變成每週重複，日期自動取消
+                if (alarm.daysMask == 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text("日期", color = C.muted, fontSize = 12.sp, letterSpacing = 1.sp)
+                            Text(
+                                fixedDate?.let { dateSummary(it) } ?: "不指定（下一次到這個時間就響）",
+                                color = if (fixedDate != null) C.accentSoft else C.textSoft, fontSize = 14.sp,
+                            )
+                        }
+                        OutlinedButton(onClick = { showDatePicker = true }, shape = RoundedCornerShape(12.dp)) {
+                            Text(if (fixedDate == null) "指定日期" else "更改", color = C.text)
+                        }
+                        if (fixedDate != null) {
+                            TextButton(onClick = { vm.setDate(alarm.id, null) }) { Text("取消", color = C.muted) }
+                        }
                     }
                 }
             }
@@ -367,6 +402,44 @@ fun AlarmEditorSheet(
             onConfirm = { vm.addGroup(it, listOf(alarm.id)); newGroupDialog = false },
             onDismiss = { newGroupDialog = false },
         )
+    }
+
+    if (showDatePicker) {
+        val today = LocalDate.now()
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = (fixedDate ?: today).toEpochDay() * DAY_MS,
+            selectableDates = object : SelectableDates {
+                // DatePicker 用 UTC 午夜的毫秒數；今天以前的日期不能選
+                override fun isSelectableDate(utcTimeMillis: Long) = utcTimeMillis / DAY_MS >= today.toEpochDay()
+                override fun isSelectableYear(year: Int) = year >= today.year
+            },
+        )
+        val colors = DatePickerDefaults.colors(
+            containerColor = C.surfaceHi,
+            titleContentColor = C.text, headlineContentColor = C.text,
+            weekdayContentColor = C.muted, navigationContentColor = C.text,
+            yearContentColor = C.text, dayContentColor = C.text, disabledDayContentColor = C.faint,
+            selectedDayContainerColor = C.accent, selectedDayContentColor = C.onAccent,
+            todayContentColor = C.accentSoft, todayDateBorderColor = C.accent,
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let { vm.setDate(alarm.id, LocalDate.ofEpochDay(it / DAY_MS)) }
+                    showDatePicker = false
+                }) { Text("確定", color = C.accent) }
+            },
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("取消", color = C.muted) } },
+            colors = colors,
+        ) {
+            DatePicker(
+                state = state,
+                title = { Text("鬧鐘在哪一天響", color = C.text, modifier = Modifier.padding(start = 24.dp, top = 16.dp)) },
+                showModeToggle = false,
+                colors = colors,
+            )
+        }
     }
 
     if (showTimePicker) {

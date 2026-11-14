@@ -151,6 +151,7 @@ object AiParser {
 1. 新增鬧鐘 {"type":"create_alarm","hour":7,"minute":15,"days":[1,3,5],"date":null,"memo":"晨跑","group_id":null,"group_name":null}
    - days：1=週一 … 7=週日。每天＝[1,2,3,4,5,6,7]，平日＝[1,2,3,4,5]，週末＝[6,7]。
    - 只響一次時 days 為 []；若指定了日期（明天、後天、10/20）填 date（格式 YYYY-MM-DD），否則 date 為 null（代表下一次到這個時間就響）。
+   - 「下週一」「這週五」「11月20號」是指定某一天、只響一次：days 為 []，date 填換算好的日期。一週從週一開始算，週六說「下週一」是後天。只有說「每週一」「週一到週五」才是重複，填 days。
    - 放進現有群組：填 group_id。放進不存在的新群組：group_id 為 null、group_name 填新群組名稱（App 會自動建立）。沒指定群組兩者都是 null。
 2. 開始計時 {"type":"create_timer","seconds":1500,"memo":"起來走動","group_name":null}
    - 指定計時器群組時 group_name 填群組名稱（不存在會自動建立），否則 null。

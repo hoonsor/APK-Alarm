@@ -34,14 +34,14 @@ object AgentCatalog {
         ),
         HoonsorAgent.action(
             "alarm_create", "新增鬧鐘",
-            "在倬的鬧鐘新增一個鬧鐘。沒給 repeat 也沒給 days 時只響一次；只響一次的鬧鐘可用 date 指定日期，而且預設是一次性（響完自動刪除）。group 不存在時會自動建立",
+            "在倬的鬧鐘新增一個鬧鐘。沒給 repeat 也沒給 days 時只響一次，而且預設是一次性（響完自動刪除）。「下週一」「這週五」「11 月 20 號」這種指定某一天的只響一次，一律用 date，不要用 days（days 是每週重複）。group 不存在時會自動建立",
             "reversible",
             obj(
                 "hour" to int("時，0–23（24 小時制）", 0, 23),
                 "minute" to int("分，0–59，預設 0", 0, 59),
                 "repeat" to enumStr("重複：once＝只響一次、weekdays＝平日、weekend＝週末、everyday＝每天", "once", "weekdays", "weekend", "everyday"),
                 "days" to daysParam(),
-                "date" to str("只響一次時的日期：today、tomorrow、day_after_tomorrow，或 YYYY-MM-DD；不給就是下一個到達的時間"),
+                "date" to dateParam(),
                 "memo" to str("鬧鐘名稱或提醒內容，例如「上班」「吃藥」"),
                 "group" to str("放進這個鬧鐘群組（名稱）"),
                 "auto_delete" to bool(AUTO_DELETE_ALARM),
@@ -50,11 +50,12 @@ object AgentCatalog {
             listOf(
                 "明天早上七點叫我", "平日六點半的鬧鐘，名稱叫上班", "設一個每天晚上十點提醒我吃藥的鬧鐘", "週六週日九點叫我，放到假日群組",
                 "幫我設一個固定的明天八點鬧鐘，響完不要刪",
+                "設定下週一九點開會的一次性鬧鐘", "這週五下午三點提醒我交報告", "十一月二十號早上八點叫我去健檢",
             ),
         ),
         HoonsorAgent.action(
             "alarm_update", "修改鬧鐘",
-            "修改一個既有鬧鐘的時間、重複、名稱或群組（只能一次改一個）；改了時間或重複會自動打開它。只想開關請用 alarm_toggle",
+            "修改一個既有鬧鐘的時間、重複、日期、名稱或群組（只能一次改一個）；改了時間、重複或日期會自動打開它。只想開關請用 alarm_toggle",
             "reversible",
             target(
                 "要改的鬧鐘（只能符合一個）",
@@ -62,12 +63,13 @@ object AgentCatalog {
                 "minute" to int("新的分，0–59", 0, 59),
                 "repeat" to enumStr("新的重複設定", "once", "weekdays", "weekend", "everyday"),
                 "days" to daysParam(),
+                "date" to str("只響一次的鬧鐘改到哪一天，格式同 alarm_create 的 date；空字串＝取消指定日期（下一次到這個時間就響）"),
                 "memo" to str("新的名稱或提醒內容"),
                 "group" to str("移到這個群組（名稱，不存在就建立）；空字串＝移出群組"),
                 "auto_delete" to bool("true＝改成一次性（響完自動刪除，只對只響一次的鬧鐘有效）、false＝響完保留"),
                 withAll = false,
             ),
-            listOf("把上班的鬧鐘改成七點十五", "七點那個鬧鐘改成只有週一到週三", "把吃藥鬧鐘的名稱改成吃維他命", "明天八點的鬧鐘響完要留著"),
+            listOf("把上班的鬧鐘改成七點十五", "七點那個鬧鐘改成只有週一到週三", "把吃藥鬧鐘的名稱改成吃維他命", "明天八點的鬧鐘響完要留著", "開會的鬧鐘改到下週三"),
         ),
         HoonsorAgent.action(
             "alarm_toggle", "開關鬧鐘",
@@ -157,8 +159,13 @@ object AgentCatalog {
     private fun enumStr(desc: String, vararg values: String) =
         JSONObject().put("type", "string").put("description", desc).put("enum", JSONArray(values.toList()))
 
+    private fun dateParam() = str(
+        "只響一次時響哪一天。可填 today、tomorrow、day_after_tomorrow、this_mon…this_sun（這週）、next_mon…next_sun（下週）、" +
+            "next2_mon…next2_sun（下下週）或 YYYY-MM-DD；一週從週一開始算，週六說「下週一」是後天。不給就是下一個到達的時間",
+    )
+
     private fun daysParam() = JSONObject().put("type", "array")
-        .put("description", "指定星期，1＝週一 … 7＝週日，例如 [1,3,5]；給了就優先於 repeat，空陣列＝只響一次")
+        .put("description", "每週重複的星期，1＝週一 … 7＝週日，例如 [1,3,5]；給了就優先於 repeat，空陣列＝只響一次。只響一次的某一天（下週一）請改用 date")
         .put("items", JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 7))
 
     private fun obj(vararg props: Pair<String, JSONObject>, required: List<String> = emptyList()): JSONObject {

@@ -1,8 +1,8 @@
 # PROJECT_STATUS
 
 - 專案：鬧鐘（HoonsorAlarm）
-- 目前版本：v0.13.0（feat/auto-backup 分支，尚未合併、未發版）
-- 最後更新：2026/11/10
+- 目前版本：v0.14.0（尚未發版）
+- 最後更新：2026/11/14
 
 ## 發布流程（免接線更新）
 
@@ -13,6 +13,15 @@
 - 第一次從 debug 版換成正式簽章版：先備份 → 解除安裝 → 安裝正式版 → 匯入備份（只需一次）。
 
 ## 版本紀錄
+
+### v0.14.0 — 2026/11/14
+- feat: 指定日期的一次性鬧鐘：「下週一九點開會」「這週五下午三點」「十一月二十號早上八點」只在那一天響一次，不再被當成每週重複或隔天就響。原因：倬要用語音總控說「請幫我設定下週一 9 點開會的一次性鬧鐘」
+- feat: 日期換算集中在 `domain/DateWords`（一週從週一開始：週六說「下週一」是後天，週一說是七天後；M/D 沒說年份時已過就是明年），App 內語音與 Agent API 共用
+- feat(agent): alarm_create 的 date 新增 this_mon…/next_mon…/next2_mon… 代號與 YYYY/MM/DD、M/D、中文「下週一」；repeat once 又給一天的 days 時當成最近那一天（保險：大腦把「下週一」填成 days）；回覆唸出「後天 11/16（一） 09:00」讓倬確認日期。alarm_update 新增 date（空字串＝取消），改成重複時自動取消日期；alarm_list 回傳 date。只新增選填參數，相容檢查通過，語音總控不用改程式
+- feat: 編輯面板：只響一次的鬧鐘多一列「日期」，可「指定日期」（日曆選擇，今天以前不能選）或取消；標題顯示「後天 11/16（一） 響一次」；卡片顯示「一次性 · 11/16（一）」。選了星期（改成重複）時自動取消日期
+- fix(voice): App 內語音「下週一九點開會」原本被當成「每週一」重複鬧鐘；現在「下週X／下下週X／這週X／幾月幾號／M/D」與「一次性＋單一星期」都是指定日期。「週一九點」「每週一」照舊是重複（語料不變）。AI 解析提示同步補上規則
+- docs: AGENT_API.md 新增「指定日期（date）規則」；語音總控說明書「倬的鬧鐘」補上指定日期例句
+- test: DateWordsTest（16 項：週的算法、月日跨年、API 日期格式、once＋days 保險、超過 15 天的排程、App 內語音）
 
 ### v0.13.0 — 2026/11/10
 - feat: 每日自動備份到 Dropbox：套用共用模組 hoonsor-kit `android-auto-backup` v1.0.0（`tw/hoonsor/backup/` 的 AutoBackup.java、BackupJobService.java，未修改）。每天用 JobScheduler 把完整備份（backup.json＋響鈴圖片與自訂鈴聲）寫到手機的 `Documents/HoonsorBackup/HoonsorAlarm/HoonsorAlarm-yyyyMMdd-HHmm.zip`，倬用 Dropsync 同步到 Dropbox；內容沒變不另存，只留最近 7 份（只刪符合檔名格式的檔，手動存的 `HoonsorAlarm-backup-…zip` 不會被刪）。需要 Android 10 以上，更舊的手機設定頁會說明、不會當掉。原因：v0.9.0 移除了 WorkManager＋雲端 API 的自動備份，改用零依賴、不需登入的共用模組
@@ -156,6 +165,7 @@
 
 ## 待辦
 
+- [ ] v0.14.0 實機驗證：語音總控說「設定下週一九點開會的一次性鬧鐘」→ 卡片顯示一次性 · 下週一日期；編輯面板指定／取消日期；改成重複後日期消失
 - [ ] v0.13.0 實機驗證：設定頁「立即備份」在 `Documents/HoonsorBackup/HoonsorAlarm/` 產生 zip、內容沒變再按不另存（自動排程）、Dropsync 同步到 Dropbox、用「從檔案匯入…」選該檔還原（含圖片與鈴聲）、關閉開關後不再排程
 - [ ] 倬執行 setup-hoonsor-signing.ps1 寫入 SIGNING_* Secrets，再推 v0.11.0 tag
 - [ ] v0.11.0 實機驗證：手機改裝正式簽章版（備份→解除安裝→安裝→還原）、App 內更新完整流程、Obtainium 追蹤

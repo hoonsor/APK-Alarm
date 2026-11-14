@@ -14,7 +14,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneId
 
 class AlarmsViewModel : ViewModel() {
     private val repo = Graph.repo
@@ -42,7 +44,16 @@ class AlarmsViewModel : ViewModel() {
         repo.updateAlarm(a.id, if (a.enabled) "停用鬧鐘" else "啟用鬧鐘") { it.copy(enabled = !it.enabled, snoozeUntil = null) }
     }
 
-    fun setDays(id: Long, mask: Int) = launch { repo.updateAlarm(id) { it.copy(daysMask = mask, enabled = true) } }
+    // 改成每週重複時取消指定日期，否則重複鬧鐘會等到那一天才開始響
+    fun setDays(id: Long, mask: Int) = launch {
+        repo.updateAlarm(id) { it.copy(daysMask = mask, enabled = true, notBefore = if (mask != 0) null else it.notBefore) }
+    }
+
+    /** 只響一次的鬧鐘指定日期；null＝不指定（下一次到這個時間就響） */
+    fun setDate(id: Long, date: LocalDate?) = launch {
+        val nb = date?.atStartOfDay(ZoneId.systemDefault())?.toInstant()?.toEpochMilli()
+        repo.updateAlarm(id, "指定日期") { it.copy(notBefore = nb, enabled = true, snoozeUntil = null) }
+    }
 
     fun setTime(id: Long, hour: Int, minute: Int) = launch {
         repo.updateAlarm(id) { it.copy(hour = hour, minute = minute, enabled = true, isCopy = false) }
